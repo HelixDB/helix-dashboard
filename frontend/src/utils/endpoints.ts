@@ -1,0 +1,159 @@
+interface ApiEndpointInfo {
+    path: string;
+    method: string;
+    query_name: string;
+    parameters: Array<{
+        name: string;
+        param_type: string;
+    }>;
+}
+
+interface EndpointConfig {
+    name: string;
+    method: string;
+    url: string;
+    description: string;
+    params: Array<{
+        name: string;
+        type: string;
+        required: boolean;
+        description: string;
+    }>;
+    body?: any;
+}
+
+function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
+    const name = apiEndpoint.query_name
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .trim();
+
+    let description = '';
+    if (apiEndpoint.query_name.startsWith('create')) {
+        description = `Create a new ${extractEntityName(apiEndpoint.query_name)}`;
+    } else if (apiEndpoint.query_name.startsWith('get')) {
+        description = `Retrieve ${extractEntityName(apiEndpoint.query_name)} data`;
+    } else if (apiEndpoint.query_name.startsWith('update')) {
+        description = `Update existing ${extractEntityName(apiEndpoint.query_name)}`;
+    } else if (apiEndpoint.query_name.startsWith('delete')) {
+        description = `Delete ${extractEntityName(apiEndpoint.query_name)} from database`;
+    } else {
+        description = `Execute ${apiEndpoint.query_name} query`;
+    }
+
+    const params = apiEndpoint.parameters.map(param => ({
+        name: param.name,
+        type: 'query',
+        required: true,
+        description: generateParamDescription(param.name, param.param_type)
+    }));
+
+    let body: any = undefined;
+    if (apiEndpoint.method === 'POST' || apiEndpoint.method === 'PUT') {
+        body = {};
+        apiEndpoint.parameters
+            .filter(p => !p.name.endsWith('_id') && p.name !== 'id')
+            .forEach(param => {
+                body[param.name] = getDefaultValueForType(param.param_type);
+            });
+    }
+
+    const url = `http://127.0.0.1:8080/api/query/${apiEndpoint.query_name}`;
+
+    return {
+        name,
+        method: apiEndpoint.method,
+        url,
+        description,
+        params,
+        body
+    };
+}
+
+function extractEntityName(queryName: string): string {
+    const withoutPrefix = queryName
+        .replace(/^(create|get|update|delete|add|remove|assign|link)/, '')
+        .replace(/^(All|By)/, '');
+
+    return withoutPrefix
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .trim()
+        .replace(/s$/, '') || 'entity';
+}
+
+function generateParamDescription(paramName: string, paramType: string): string {
+    if (paramName.endsWith('_id') || paramName === 'id') {
+        const entityName = paramName.replace('_id', '').replace(/([A-Z])/g, ' $1').toLowerCase();
+        return `${entityName.charAt(0).toUpperCase()}${entityName.slice(1)} identifier`;
+    }
+
+    const readable = paramName
+        .replace(/_/g, ' ')
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .trim();
+
+    return `${readable.charAt(0).toUpperCase()}${readable.slice(1)} value`;
+}
+
+function getDefaultValueForType(paramType: string): any {
+    switch (paramType) {
+        case 'String':
+            return '';
+        case 'i32':
+        case 'i64':
+            return 0;
+        case 'f64':
+            return 0.0;
+        case 'Vec<f64>':
+            return [];
+        default:
+            return '';
+    }
+}
+
+function generateEndpointKey(queryName: string): string {
+    return queryName
+        .replace(/([A-Z])/g, '-$1')
+        .toLowerCase()
+        .replace(/^-/, '');
+}
+
+export async function fetchEndpoints(): Promise<Record<string, EndpointConfig>> {
+    try {
+        const response = await fetch('http://127.0.0.1:8080/api/endpoints');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch endpoints: ${response.status}`);
+        }
+
+        const apiEndpoints: ApiEndpointInfo[] = await response.json();
+        const endpoints: Record<string, EndpointConfig> = {};
+
+        apiEndpoints.forEach(apiEndpoint => {
+            const key = generateEndpointKey(apiEndpoint.query_name);
+            endpoints[key] = convertToFrontendFormat(apiEndpoint);
+        });
+
+        return endpoints;
+    } catch (error) {
+        console.error('Failed to fetch endpoints from backend:', error);
+        return {};
+    }
+}
+
+let endpointsCache: Record<string, EndpointConfig> | null = null;
+
+export async function getEndpoints(): Promise<Record<string, EndpointConfig>> {
+    if (endpointsCache) {
+        return endpointsCache;
+    }
+
+    endpointsCache = await fetchEndpoints();
+    return endpointsCache;
+}
+
+
+export function clearEndpointsCache(): void {
+    endpointsCache = null;
+}
