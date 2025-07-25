@@ -70,7 +70,7 @@ const CollapsibleArray = ({ items, name }: { items: any[]; name?: string }) => {
                         <div key={index} className="my-0.5">
                             <span className="text-muted-foreground mr-2">{index}:</span>
                             <JsonNode value={item} />
-                            {index < items.length - 1 && ','}
+                            {index < displayedItems.length - 1 && <span>,</span>}
                         </div>
                     ))}
                     
@@ -93,6 +93,7 @@ const CollapsibleArray = ({ items, name }: { items: any[]; name?: string }) => {
 // Collapsible object component
 const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: string }) => {
     const [isExpanded, setIsExpanded] = useState(name === undefined) // Root object expanded by default
+    
     const entries = Object.entries(obj)
     
     if (entries.length === 0) return <span>{'{}'}</span>
@@ -118,8 +119,10 @@ const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: str
                     {entries.map(([key, value], index) => (
                         <div key={key} className="my-0.5">
                             <span style={{ color: '#7E9CD8' }}>"{key}":</span>
-                            <span className="ml-2"><JsonNode value={value} /></span>
-                            {index < entries.length - 1 && ','}
+                            <span className="ml-2">
+                                <JsonNode value={value} />
+                                {index < entries.length - 1 && <span>,</span>}
+                            </span>
                         </div>
                     ))}
                 </div>

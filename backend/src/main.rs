@@ -8,6 +8,7 @@ use clap::{Parser, ValueEnum};
 use helix_rs::{HelixDB, HelixDBClient};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use serde_json::{Map, Value};
 
 mod query_parser;
 mod schema_parser;
@@ -50,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
             let url = "http://localhost:6969".to_string();
             println!("Starting server in local-introspect mode");
             println!(
-                "Using local HelixDB introspect endpoint: {}/api/introspect",
+                "Using local HelixDB introspect endpoint: {}/introspect",
                 url
             );
             url
@@ -65,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
                 .cloud_url
                 .expect("Cloud URL is required for cloud mode");
             println!("Starting server in cloud mode");
-            println!("Using cloud HelixDB endpoint: {}/api/introspect", url);
+            println!("Using cloud HelixDB endpoint: {}/introspect", url);
             url
         }
     };
@@ -157,7 +158,7 @@ async fn execute_query_handler(
     let params_value = serde_json::Value::Object(params);
 
     match app_state.helix_db.query(&query_name, &params_value).await {
-        Ok(result) => Json(result),
+        Ok(result) => Json(sort_json_object(result)),
         Err(e) => {
             eprintln!("Error executing query '{}': {}", query_name, e);
             Json(serde_json::json!({
@@ -185,7 +186,38 @@ async fn get_endpoints_handler(
         }
         DataSource::LocalIntrospect | DataSource::Cloud => {
             match fetch_cloud_introspect(&app_state.helix_url).await {
-                Ok(introspect_data) => Json(introspect_data.queries),
+                Ok(introspect_data) => {
+                    let endpoints = introspect_data.queries.into_iter().map(|query| {
+                        let parameters = if let serde_json::Value::Object(params) = query.parameters {
+                            params.into_iter().map(|(name, type_val)| {
+                                query_parser::QueryParameter {
+                                    name,
+                                    param_type: type_val.as_str().unwrap_or("String").to_string(),
+                                }
+                            }).collect()
+                        } else {
+                            vec![]
+                        };
+                        
+                        let method = if query.name.starts_with("create") || query.name.starts_with("add") {
+                            "POST"
+                        } else if query.name.starts_with("update") {
+                            "PUT"
+                        } else if query.name.starts_with("delete") || query.name.starts_with("remove") {
+                            "DELETE"
+                        } else {
+                            "GET"
+                        };
+                        
+                        query_parser::ApiEndpointInfo {
+                            path: format!("/api/query/{}", query.name),
+                            method: method.to_string(),
+                            query_name: query.name,
+                            parameters,
+                        }
+                    }).collect();
+                    Json(endpoints)
+                },
                 Err(e) => {
                     eprintln!(
                         "Error fetching endpoints from {}: {}",
@@ -199,14 +231,21 @@ async fn get_endpoints_handler(
 }
 
 #[derive(serde::Deserialize)]
+struct IntrospectQuery {
+    name: String,
+    parameters: serde_json::Value,
+    returns: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
 struct CloudIntrospectData {
     schema: schema_parser::SchemaInfo,
-    queries: Vec<query_parser::ApiEndpointInfo>,
+    queries: Vec<IntrospectQuery>,
 }
 
 async fn fetch_cloud_introspect(helix_url: &str) -> anyhow::Result<CloudIntrospectData> {
     let client = reqwest::Client::new();
-    let url = format!("{}/api/introspect", helix_url);
+    let url = format!("{}/introspect", helix_url);
 
     let response = client.get(&url).send().await?;
 
@@ -214,6 +253,57 @@ async fn fetch_cloud_introspect(helix_url: &str) -> anyhow::Result<CloudIntrospe
         anyhow::bail!("Failed to fetch introspect data: {}", response.status());
     }
 
-    let data = response.json::<CloudIntrospectData>().await?;
-    Ok(data)
+    let text = response.text().await?;
+    match serde_json::from_str::<CloudIntrospectData>(&text) {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            eprintln!("Failed to parse introspect response: {}", e);
+            eprintln!("Response text: {}", text);
+            anyhow::bail!("Failed to parse introspect response: {}", e)
+        }
+    }
+}
+
+fn sort_json_object(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut sorted_map = Map::new();
+            
+            let mut numeric_keys: Vec<(String, Value)> = vec![];
+            let mut id_key: Option<(String, Value)> = None;
+            let mut other_keys: Vec<(String, Value)> = vec![];
+            
+            for (key, val) in map {
+                let sorted_val = sort_json_object(val);
+                
+                if key.chars().all(|c| c.is_numeric()) {
+                    numeric_keys.push((key, sorted_val));
+                } else if key == "id" {
+                    id_key = Some((key, sorted_val));
+                } else {
+                    other_keys.push((key, sorted_val));
+                }
+            }
+            
+            numeric_keys.sort_by(|(a, _), (b, _)| {
+                a.parse::<u64>().unwrap_or(0).cmp(&b.parse::<u64>().unwrap_or(0))
+            });
+            
+            for (k, v) in numeric_keys {
+                sorted_map.insert(k, v);
+            }
+            if let Some((k, v)) = id_key {
+                sorted_map.insert(k, v);
+            }
+            for (k, v) in other_keys {
+                sorted_map.insert(k, v);
+            }
+            
+            Value::Object(sorted_map)
+        }
+        Value::Array(arr) => {
+            Value::Array(arr.into_iter().map(sort_json_object).collect())
+        }
+        other => other,
+    }
 }

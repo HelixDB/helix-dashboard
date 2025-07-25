@@ -5,14 +5,21 @@ use std::fs;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NodeType {
     pub name: String,
+    #[serde(default = "default_node_type")]
     pub node_type: String,
     pub properties: HashMap<String, String>,
+}
+
+fn default_node_type() -> String {
+    "N".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EdgeType {
     pub name: String,
+    #[serde(alias = "from")]
     pub from_node: String,
+    #[serde(alias = "to")]
     pub to_node: String,
     pub properties: HashMap<String, String>,
 }
