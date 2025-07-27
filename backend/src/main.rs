@@ -33,6 +33,8 @@ struct Args {
     source: DataSource,
     #[arg(value_name = "URL", required_if_eq("source", "cloud"))]
     cloud_url: Option<String>,
+    #[arg(short, long, default_value = "6969", help = "Port for local HelixDB instance")]
+    port: u16,
 }
 
 #[derive(Clone)]
@@ -48,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     let helix_url = match args.source {
         DataSource::LocalIntrospect => {
-            let url = "http://localhost:6969".to_string();
+            let url = format!("http://localhost:{}", args.port);
             println!("Starting server in local-introspect mode");
             println!(
                 "Using local HelixDB introspect endpoint: {}/introspect",
@@ -59,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         DataSource::LocalFile => {
             println!("Starting server in local-file mode");
             println!("Reading from local helixdb-cfg files");
-            "http://localhost:6969".to_string()
+            format!("http://localhost:{}", args.port)
         }
         DataSource::Cloud => {
             let url = args
@@ -71,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let helix_db = Arc::new(HelixDB::new(Some("http://localhost"), Some(6969)));
+    let helix_db = Arc::new(HelixDB::new(Some("http://localhost"), Some(args.port)));
 
     let app_state = AppState {
         helix_db: helix_db.clone(),
@@ -199,7 +201,7 @@ async fn get_endpoints_handler(
                             vec![]
                         };
                         
-                        let method = if query.name.starts_with("create") || query.name.starts_with("add") {
+                        let method = if query.name.starts_with("create") || query.name.starts_with("add") || query.name.starts_with("assign") {
                             "POST"
                         } else if query.name.starts_with("update") {
                             "PUT"
@@ -289,6 +291,7 @@ fn sort_json_object(value: Value) -> Value {
                 a.parse::<u64>().unwrap_or(0).cmp(&b.parse::<u64>().unwrap_or(0))
             });
             
+            // Insert in order: numeric keys, id, then others
             for (k, v) in numeric_keys {
                 sorted_map.insert(k, v);
             }

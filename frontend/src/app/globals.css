@@ -251,6 +251,15 @@
     }
 }
 
+    /* Visualizer specific styles */
+    .bg-grid-pattern {
+        background-image: 
+            linear-gradient(to right, oklch(0.5 0.01 0 / 0.1) 1px, transparent 1px),
+            linear-gradient(to bottom, oklch(0.5 0.01 0 / 0.1) 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
