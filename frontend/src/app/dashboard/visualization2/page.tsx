@@ -12,7 +12,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X } from 'lucide-react';
+import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Users } from 'lucide-react';
 
 interface DataItem {
     id: string;
@@ -46,6 +46,42 @@ const DataVisualization = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+    const [topK, setTopK] = useState<number>(100);
+    const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+    const [selectedDoctorNode, setSelectedDoctorNode] = useState<DataItem | null>(null);
+    const [loadingPatients, setLoadingPatients] = useState(false);
+    const hasZoomedRef = useRef(false);
+    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!fgRef.current) return;
+
+        // Reset zoom flag when focus changes
+        hasZoomedRef.current = false;
+
+        if (focusedNodeId) {
+            setTimeout(() => {
+                if (!fgRef.current) return;
+                let currentGraphData: any;
+                const graphDataAccessor: any = fgRef.current.graphData;
+                if (typeof graphDataAccessor === 'function') {
+                    currentGraphData = graphDataAccessor();
+                } else {
+                    currentGraphData = graphDataAccessor;
+                }
+                const focusedNode = currentGraphData?.nodes?.find((n: any) => n.id === focusedNodeId);
+                if (focusedNode) {
+                    fgRef.current.centerAt(focusedNode.x, focusedNode.y, 1000);
+                    if (!hasZoomedRef.current) {
+                        fgRef.current.zoom(3, 1000);
+                        hasZoomedRef.current = true; // mark that we've zoomed for this focus
+                    }
+                }
+            }, 100);
+        } else {
+            // No action needed here; zoom fitting is handled by the graphData effect
+        }
+    }, [focusedNodeId]);
 
     const getNodeColor = useCallback((item: DataItem): string => {
         const label = item.label?.toLowerCase() || '';
@@ -67,12 +103,16 @@ const DataVisualization = () => {
         const data = node.originalData as DataItem;
         const label = data.label || 'Entity';
         const allFields = Object.entries(data).filter(([key]) => key !== 'label' && key !== 'id');
-        const fields = allFields.slice(0, 5);
+        const isExpanded = expandedNodes.has(node.id);
+        const fields = isExpanded ? allFields : allFields.slice(0, 5);
+        const isDoctor = label.toLowerCase() === 'doctor';
+        const isFocused = focusedNodeId === node.id;
 
         const padding = 12;
         const fontSize = 11;
         const headerFontSize = 14;
         const typeFontSize = 9;
+        const buttonHeight = isDoctor && isFocused ? 26 : 0;
 
         ctx.font = `${headerFontSize}px monospace bold`;
         let maxWidth = ctx.measureText(label).width;
@@ -86,8 +126,10 @@ const DataVisualization = () => {
 
         const cardWidth = maxWidth + padding * 3;
         const fieldHeight = fontSize * 1.2;
-        let cardHeight = headerFontSize + padding * 2 + fields.length * fieldHeight;
+        let cardHeight = headerFontSize + padding * 2 + fields.length * fieldHeight + buttonHeight;
+        // Always add space for expand/collapse text if there are more than 5 fields
         if (allFields.length > 5) cardHeight += fieldHeight;
+        if (isDoctor && isFocused) cardHeight += padding;
 
         // Background
         ctx.fillStyle = 'rgba(42, 42, 42, 0.98)';
@@ -127,30 +169,137 @@ const DataVisualization = () => {
             yPos += fieldHeight;
         });
 
+        // Show expand/collapse option if there are more than 5 fields
         if (allFields.length > 5) {
-            ctx.fillStyle = '#10b981';
+            const toggleText = isExpanded ? '- Show Less' : `+ ${allFields.length - 5} More`;
+            const toggleY = yPos + fontSize / 1.5;
+            
+            // Create clickable area for toggle text
+            const toggleWidth = ctx.measureText(toggleText).width;
+            const toggleX = -toggleWidth / 2; // Relative to node center
+            node.__moreBounds = {
+                x: toggleX,
+                y: yPos - node.y, // Make it relative to node center
+                width: toggleWidth,
+                height: fieldHeight
+            };
+            
+            // Draw toggle text
+            ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981'; // Red for collapse, green for expand
             ctx.textAlign = 'center';
-            ctx.fillText(`+ ${allFields.length - 5} More`, node.x, yPos + fontSize / 1.5);
+            ctx.font = `10px monospace`;
+            ctx.fillText(toggleText, node.x, toggleY);
+            
+            // Add subtle underline to indicate clickable
+            ctx.strokeStyle = isExpanded ? '#ef4444' : '#10b981';
+            ctx.lineWidth = 0.5;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.moveTo(node.x - toggleWidth/2, toggleY + 2);
+            ctx.lineTo(node.x + toggleWidth/2, toggleY + 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            yPos += fieldHeight;
+        }
+
+        // Draw button for focused doctor nodes
+        if (isDoctor && isFocused) {
+            yPos += padding / 2;
+            const buttonWidth = cardWidth - padding * 2;
+            const buttonX = node.x - buttonWidth / 2;
+            const buttonY = yPos;
+
+            // Button background (change color if loading)
+            ctx.fillStyle = loadingPatients ? 'rgba(75, 85, 99, 0.9)' : 'rgba(16, 185, 129, 0.9)';
+
+            // Button border
+            ctx.strokeStyle = loadingPatients ? 'rgba(75, 85, 99, 0.6)' : 'rgba(16, 185, 129, 0.6)';
+
+            // Button text
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.font = `10px monospace`;
+            ctx.fillText(loadingPatients ? 'Loading...' : 'View Patients', node.x, buttonY + 14);
+
+            // Store button bounds for click detection
+            node.__buttonBounds = {
+                x: buttonX,
+                y: buttonY,
+                width: buttonWidth,
+                height: 22
+            };
         }
 
         node.__cardDimensions = [cardWidth, cardHeight];
     };
 
     const graphData = useMemo(() => {
-        const nodes = Array.from(allNodes.values()).map(item => ({
+        const allNodesList = Array.from(allNodes.values()).map(item => ({
             id: item.id,
             originalData: item,
             color: getNodeColor(item),
-            x: (Math.random() - 0.5) * 1000,
-            y: (Math.random() - 0.5) * 1000,
+            x: (Math.random() - 0.5) * 500,
+            y: (Math.random() - 0.5) * 500,
         }));
-        const links = edgeData.map(edge => ({
-            source: edge.from_node,
-            target: edge.to_node,
-            label: edge.label,
-        }));
+
+        // If a node is focused, only show that node and its connected nodes
+        const nodes = focusedNodeId
+            ? allNodesList.filter(node => {
+                if (node.id === focusedNodeId) return true;
+                // Also show connected patient nodes if they exist
+                return edgeData.some(edge =>
+                    (edge.from_node === focusedNodeId && edge.to_node === node.id) ||
+                    (edge.to_node === focusedNodeId && edge.from_node === node.id)
+                );
+            })
+            : allNodesList;
+
+        // Group nodes by label/type
+        const nodesByType = new Map<string, typeof nodes>();
+        nodes.forEach(node => {
+            const type = node.originalData.label || 'unknown';
+            if (!nodesByType.has(type)) {
+                nodesByType.set(type, []);
+            }
+            nodesByType.get(type)!.push(node);
+        });
+
+        // Create virtual edges between nodes of the same type
+        const virtualLinks: any[] = [];
+        nodesByType.forEach((nodesOfType) => {
+            // Connect each node to a few others of the same type to create a mesh
+            for (let i = 0; i < nodesOfType.length; i++) {
+                // Connect to next 2-3 nodes in a circular pattern
+                for (let j = 1; j <= Math.min(3, nodesOfType.length - 1); j++) {
+                    const targetIndex = (i + j) % nodesOfType.length;
+                    if (i !== targetIndex) {
+                        virtualLinks.push({
+                            source: nodesOfType[i].id,
+                            target: nodesOfType[targetIndex].id,
+                            label: 'virtual',
+                            isVirtual: true
+                        });
+                    }
+                }
+            }
+        });
+
+        // Only include edges where both nodes are in the displayed nodes
+        const nodeIds = new Set(nodes.map(n => n.id));
+        const links = [
+            ...edgeData
+                .filter(edge => nodeIds.has(edge.from_node) && nodeIds.has(edge.to_node))
+                .map(edge => ({
+                    source: edge.from_node,
+                    target: edge.to_node,
+                    label: edge.label,
+                    isVirtual: false
+                })),
+            ...virtualLinks
+        ];
+
         return { nodes, links };
-    }, [allNodes, edgeData, getNodeColor]);
+    }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
 
     const fetchQueries = async () => {
         try {
@@ -232,10 +381,13 @@ const DataVisualization = () => {
                     dataArray = data;
                 }
 
+                // Apply topK limit per query
+                const limitedData = dataArray.slice(0, topK);
+
                 if (queryOption.type === 'edge') {
-                    newEdges.push(...dataArray);
+                    newEdges.push(...limitedData);
                 } else {
-                    dataArray.forEach(item => {
+                    limitedData.forEach(item => {
                         newNodes.set(item.id, item);
                     });
                 }
@@ -253,22 +405,30 @@ const DataVisualization = () => {
 
     useEffect(() => {
         if (fgRef.current && graphData.nodes.length > 0) {
-            // Configure forces for initial spacing
-            fgRef.current.d3Force('charge').strength(-800);
-            fgRef.current.d3Force('link').distance(200).strength(0.5);
-            fgRef.current.d3Force('center').strength(0.1);
+            // Configure forces for initial spacing with stronger repulsion
+            fgRef.current.d3Force('charge').strength(-5000);
+            fgRef.current.d3Force('link')
+                .distance((link: any) => link.isVirtual ? 500 : 300)
+                .strength((link: any) => link.isVirtual ? 0.05 : 0.3);
+            fgRef.current.d3Force('center').strength(0.05);
 
-            fgRef.current.zoomToFit(400, 200);
+            // Only zoom to fit if no node is focused (meaning we're not in expanded view)
+            if (!focusedNodeId) {
+                fgRef.current.zoomToFit(400, 300);
+            }
 
             setTimeout(() => {
                 if (fgRef.current) {
-                    fgRef.current.d3Force('charge').strength(-400);
-                    fgRef.current.d3Force('link').strength(0.2);
+                    // Reduce forces after initial layout for less movement
+                    fgRef.current.d3Force('charge').strength(-1000);
+                    fgRef.current.d3Force('link')
+                        .distance((link: any) => link.isVirtual ? 400 : 250)
+                        .strength((link: any) => link.isVirtual ? 0.05 : 0.2);
                     fgRef.current.d3Force('center').strength(0.01);
                 }
-            }, 3000);
+            }, 5000);
         }
-    }, [graphData]);
+    }, [graphData, focusedNodeId]);
 
     const toggleQuery = (queryValue: string) => {
         setSelectedQueries(prev =>
@@ -282,6 +442,87 @@ const DataVisualization = () => {
         setAllNodes(new Map());
         setEdgeData([]);
         setSelectedQueries([]);
+    };
+
+    const fetchConnectedNodes = async (doctorId: string) => {
+        setLoadingPatients(true);
+        try {
+            const response = await fetch(`http://127.0.0.1:8080/api/query/getDoctorTreatsPatientEdgesByDoctor?doctor_id=${doctorId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data: ApiResponse = await response.json();
+            let edgesArray: any[] = [];
+            for (const key in data) {
+                if (Array.isArray(data[key])) {
+                    edgesArray = data[key];
+                    break;
+                }
+            }
+
+            // Get unique patient IDs from edges
+            const patientIds = [...new Set(edgesArray.map(edge => edge.to_node))];
+
+            // Fetch full patient data for each patient ID
+            const patientPromises = patientIds.map(async (patientId) => {
+                try {
+                    const patientResponse = await fetch(`http://127.0.0.1:8080/api/query/getPatient?patient_id=${patientId}`);
+                    if (!patientResponse.ok) {
+                        console.error(`Failed to fetch patient ${patientId}`);
+                        return null;
+                    }
+                    const patientData = await patientResponse.json();
+                    
+                    // Extract patient from response (similar to edge extraction)
+                    let patient = null;
+                    for (const key in patientData) {
+                        if (Array.isArray(patientData[key]) && patientData[key].length > 0) {
+                            patient = patientData[key][0];
+                            break;
+                        } else if (typeof patientData[key] === 'object' && patientData[key].id === patientId) {
+                            patient = patientData[key];
+                            break;
+                        }
+                    }
+                    
+                    if (patient) {
+                        return {
+                            ...patient,
+                            id: patientId,
+                            label: 'Patient'
+                        };
+                    }
+                    return null;
+                } catch (error) {
+                    console.error(`Error fetching patient ${patientId}:`, error);
+                    return null;
+                }
+            });
+
+            // Wait for all patient data to be fetched
+            const patientResults = await Promise.all(patientPromises);
+            const patientNodes = patientResults.filter(p => p !== null) as DataItem[];
+
+            // Add patient nodes to the graph
+            const newNodes = new Map(allNodes);
+            patientNodes.forEach(patient => {
+                newNodes.set(patient.id, patient);
+            });
+
+            // Add edges to the graph
+            const newEdges = [...edgeData, ...edgesArray];
+
+            // Update state - this will trigger a re-render without any zoom effects
+            setAllNodes(newNodes);
+            setEdgeData(newEdges);
+
+        } catch (error) {
+            console.error('Failed to fetch connected nodes:', error);
+            setError(error instanceof Error ? error.message : 'Failed to fetch connected nodes');
+        } finally {
+            setLoadingPatients(false);
+        }
     };
 
     if (loading) {
@@ -362,6 +603,17 @@ const DataVisualization = () => {
                 <Button onClick={clearGraph}>
                     <RotateCcw size={16} /> Clear
                 </Button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Top K:</label>
+                    <Input
+                        type="number"
+                        value={topK}
+                        onChange={(e) => setTopK(Number(e.target.value) || 100)}
+                        style={{ width: '80px' }}
+                        min={1}
+                        max={1000}
+                    />
+                </div>
             </div>
             <ForceGraph2D
                 ref={fgRef}
@@ -375,54 +627,122 @@ const DataVisualization = () => {
                     }
                 }}
                 onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
-                onNodeClick={(node: any) => {
-                    if (fgRef.current) {
-                        fgRef.current.centerAt(node.x, node.y, 400);
-                        fgRef.current.zoom(2, 400);
+                onNodeClick={(node: any, event: MouseEvent) => {
+                    const nodeData = node.originalData as DataItem;
+
+                    // Get click position relative to canvas
+                    const canvas = event.target as HTMLCanvasElement;
+                    const rect = canvas.getBoundingClientRect();
+                    const canvasX = event.clientX - rect.left;
+                    const canvasY = event.clientY - rect.top;
+
+                    // Convert to graph coordinates
+                    const graphCoords = fgRef.current?.screen2GraphCoords(canvasX, canvasY);
+                    if (graphCoords) {
+                        // Check if clicked on "More" text
+                        if (node.__moreBounds) {
+                            const moreBounds = node.__moreBounds;
+                            const relX = graphCoords.x - node.x;
+                            const relY = graphCoords.y - node.y;
+                            
+                            if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
+                                relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
+                                // Toggle expanded state
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setExpandedNodes(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(node.id)) {
+                                        newSet.delete(node.id);
+                                    } else {
+                                        newSet.add(node.id);
+                                    }
+                                    return newSet;
+                                });
+                                return;
+                            }
+                        }
+
+                        if (nodeData.label?.toLowerCase() === 'doctor' && focusedNodeId === node.id && node.__buttonBounds) {
+                            const bounds = node.__buttonBounds;
+                            const relX = graphCoords.x - node.x;
+                            const relY = graphCoords.y - node.y;
+
+                            if (relX >= bounds.x && relX <= bounds.x + bounds.width &&
+                                relY >= bounds.y && relY <= bounds.y + bounds.height) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setLoadingPatients(true);
+                                fetchConnectedNodes(nodeData.id);
+                                return;
+                            }
+                        }
+                    }
+
+                    if (nodeData.label?.toLowerCase() === 'doctor') {
+                        setFocusedNodeId(node.id);
+                        setSelectedDoctorNode(nodeData);
+                    } else {
+                        if (fgRef.current) {
+                            fgRef.current.centerAt(node.x, node.y, 400);
+                            const currentZoom = fgRef.current.zoom();
+                            if (currentZoom < 1.5) {
+                                fgRef.current.zoom(1.5, 400);
+                            }
+                        }
                     }
                 }}
-                linkColor={() => 'rgba(150, 150, 150, 0.6)'}
-                linkWidth={2}
+                linkColor={(link: any) => link.isVirtual ? 'rgba(100, 100, 100, 0.1)' : 'rgba(150, 150, 150, 0.6)'}
+                linkWidth={(link: any) => link.isVirtual ? 0.5 : 2}
                 linkDirectionalParticles={(link: any) => {
+                    if (link.isVirtual) return 0;
                     if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
                     return 0;
                 }}
                 linkDirectionalParticleWidth={1.5}
                 linkDirectionalParticleSpeed={0.005}
-                linkDirectionalArrowLength={6}
+                linkDirectionalArrowLength={(link: any) => link.isVirtual ? 0 : 6}
                 linkDirectionalArrowRelPos={1}
                 cooldownTicks={100}
                 cooldownTime={10000}
                 backgroundColor="#1a1a1a"
-                d3AlphaDecay={0.05}
-                d3VelocityDecay={0.7}
-                d3AlphaMin={0.0001}
+                d3AlphaDecay={0.02}
+                d3VelocityDecay={0.8}
+                d3AlphaMin={0.001}
                 warmupTicks={50}
                 enableNodeDrag={true}
                 onNodeDrag={(node: any) => {
                     node.fx = node.x;
-                    node.fy = node.y;
-
-                    if (fgRef.current) {
-                        fgRef.current.d3Force('charge').strength(-50);
-                        fgRef.current.d3Force('link').strength(0.8);
-                    }
+                    node.fy = node.y;   
                 }}
                 onNodeDragEnd={(node: any) => {
-                    // Keep the dragged node fixed where user placed it
-                    node.fx = node.x;
-                    node.fy = node.y;
-
-                    // Restore normal forces after drag
-                    if (fgRef.current) {
-                        fgRef.current.d3Force('charge').strength(-400);
-                        fgRef.current.d3Force('link').strength(0.2);
-                    }
-
-                    // Mark this node as user dragged so it stays fixed
-                    node._userDragged = true;
+                    // Let the node be free to move again after drag
+                    node.fx = undefined;
+                    node.fy = undefined;
+                }}
+                onBackgroundClick={() => {
+                    // Click off to restore all nodes
+                    setFocusedNodeId(null);
+                    setSelectedDoctorNode(null);
                 }}
             />
+            <div style={{
+                position: 'absolute',
+                bottom: 10,
+                left: 10,
+                zIndex: 10,
+                color: '#e0e0e0',
+                background: 'rgba(40, 40, 40, 0.9)',
+                padding: '10px',
+                borderRadius: '8px',
+                border: '1px solid rgba(80, 80, 80, 0.4)'
+            }}>
+                {allNodes.size > 0
+                    ? `Displaying ${allNodes.size} nodes (${graphData.links.filter((l: any) => !l.isVirtual).length} connections) - Top ${topK} per query`
+                    : 'Select queries and click "Add to Graph" to start visualizing'
+                }
+            </div>
+
         </div>
     );
 };
