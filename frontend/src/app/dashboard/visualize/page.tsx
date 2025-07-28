@@ -47,31 +47,28 @@ const DataVisualization = () => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [topK, setTopK] = useState<number>(100);
+    const [topKInput, setTopKInput] = useState<string>('100');
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
     const [selectedDoctorNode, setSelectedDoctorNode] = useState<DataItem | null>(null);
     const [loadingPatients, setLoadingPatients] = useState(false);
     const hasZoomedRef = useRef(false);
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+    const isDraggingRef = useRef(false);
+    const lastZoomRef = useRef<number>(1);
+    const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Simple zoom to fit when focused node changes
     useEffect(() => {
         if (!fgRef.current) return;
 
         if (focusedNodeId) {
+            // When focusing on a single node, center and set a reasonable zoom level
             setTimeout(() => {
-                if (!fgRef.current) return;
-                let currentGraphData: any;
-                const graphDataAccessor: any = fgRef.current.graphData;
-                if (typeof graphDataAccessor === 'function') {
-                    currentGraphData = graphDataAccessor();
-                } else {
-                    currentGraphData = graphDataAccessor;
+                if (fgRef.current) {
+                    fgRef.current.centerAt(0, 0, 400);
+                    fgRef.current.zoom(1.5, 400); // Fixed zoom level for single node view
                 }
-                const focusedNode = currentGraphData?.nodes?.find((n: any) => n.id === focusedNodeId);
-                if (focusedNode) {
-                    fgRef.current.centerAt(focusedNode.x, focusedNode.y, 1000);
-                    fgRef.current.zoom(3, 1000);
-                }
-            }, 100);
+            }, 300);
         }
     }, [focusedNodeId]);
 
@@ -103,151 +100,243 @@ const DataVisualization = () => {
         return 'String';
     };
 
-    const drawNode = (node: any, ctx: CanvasRenderingContext2D, _globalScale: number, isHovered: boolean) => {
-        const data = node.originalData as DataItem;
-        const label = data.label || 'Entity';
-        const allFields = Object.entries(data).filter(([key]) => key !== 'label' && key !== 'id');
-        const isExpanded = expandedNodes.has(node.id);
-        const fields = isExpanded ? allFields : allFields.slice(0, 5);
-        const isDoctor = label.toLowerCase() === 'doctor';
-        const isFocused = focusedNodeId === node.id;
+    const drawNode = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, isHovered: boolean) => {
+        const thresholdLow = 0.8;
+        const thresholdHigh = 1.3;
+        let renderMode: 'simple' | 'detailed' | 'transition' = 'simple';
+        let detailOpacity = 0;
 
-        const padding = 12;
-        const fontSize = 11;
-        const headerFontSize = 14;
-        const typeFontSize = 9;
-        const buttonHeight = isDoctor && isFocused ? 26 : 0;
-
-        ctx.font = `${headerFontSize}px monospace bold`;
-        let maxWidth = ctx.measureText(label).width;
-
-        ctx.font = `${fontSize}px monospace`;
-        fields.forEach(([key, value]) => {
-            const displayValue = typeof value === 'string' && value.length > 20 ? value.substring(0, 20) + '...' : value;
-            const text = `${key}: ${displayValue}`;
-            maxWidth = Math.max(maxWidth, ctx.measureText(text).width + ctx.measureText(' I32').width);
-        });
-
-        const cardWidth = maxWidth + padding * 3;
-        const fieldHeight = fontSize * 1.2;
-        let cardHeight = headerFontSize + padding * 2 + fields.length * fieldHeight + buttonHeight;
-        // Always add space for expand/collapse text if there are more than 5 fields
-        if (allFields.length > 5) cardHeight += fieldHeight;
-        if (isDoctor && isFocused) cardHeight += padding;
-
-        // Background - use the node's generated color
-        ctx.fillStyle = node.color || 'rgba(42, 42, 42, 0.98)';
-        ctx.fillRect(node.x - cardWidth / 2, node.y - cardHeight / 2, cardWidth, cardHeight);
-
-        // Border
-        ctx.strokeStyle = isHovered ? '#10b981' : 'rgba(80, 80, 80, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(node.x - cardWidth / 2, node.y - cardHeight / 2, cardWidth, cardHeight);
-
-        // Header
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.font = `${headerFontSize}px monospace bold`;
-        ctx.fillText(label, node.x, node.y - cardHeight / 2 + headerFontSize + padding / 2);
-
-        // Fields
-        let yPos = node.y - cardHeight / 2 + headerFontSize + padding * 1.5;
-        ctx.textAlign = 'left';
-        ctx.font = `${fontSize}px monospace`;
-        fields.forEach(([key, value]) => {
-            const fieldType = formatFieldType(key, value);
-            const displayValue = typeof value === 'string' && value.length > 20 ? value.substring(0, 20) + '...' : String(value);
-            const isId = key === 'id';
-
-            ctx.fillStyle = '#94a3b8';
-            ctx.fillText(`${key}:`, node.x - cardWidth / 2 + padding, yPos + fontSize / 1.5);
-
-            ctx.fillStyle = isId ? '#10b981' : '#e2e8f0';
-            ctx.fillText(displayValue, node.x - cardWidth / 2 + padding + ctx.measureText(`${key}: `).width, yPos + fontSize / 1.5);
-
-            ctx.fillStyle = '#64748b';
-            ctx.font = `${typeFontSize}px monospace`;
-            ctx.fillText(fieldType, node.x + cardWidth / 2 - padding - ctx.measureText(fieldType).width, yPos + fontSize / 1.5);
-            ctx.font = `${fontSize}px monospace`;
-
-            yPos += fieldHeight;
-        });
-
-        // Show expand/collapse option if there are more than 5 fields
-        if (allFields.length > 5) {
-            const toggleText = isExpanded ? '- Show Less' : `+ ${allFields.length - 5} More`;
-            const toggleY = yPos + fontSize / 1.5;
-
-            // Create clickable area for toggle text
-            const toggleWidth = ctx.measureText(toggleText).width;
-            const toggleX = -toggleWidth / 2;
-            node.__moreBounds = {
-                x: toggleX,
-                y: yPos - node.y,
-                width: toggleWidth,
-                height: fieldHeight
-            };
-
-            // Draw toggle text
-            ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981';
-            ctx.textAlign = 'center';
-            ctx.font = `10px monospace`;
-            ctx.fillText(toggleText, node.x, toggleY);
-
-            // Add subtle underline to indicate clickable
-            ctx.strokeStyle = isExpanded ? '#ef4444' : '#10b981';
-            ctx.lineWidth = 0.5;
-            ctx.setLineDash([2, 2]);
-            ctx.beginPath();
-            ctx.moveTo(node.x - toggleWidth / 2, toggleY + 2);
-            ctx.lineTo(node.x + toggleWidth / 2, toggleY + 2);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            yPos += fieldHeight;
+        // Determine render mode based on node count and zoom level
+        if (nodeCount < 50) {
+            renderMode = 'detailed';
+            detailOpacity = 1;
+        } else {
+            if (globalScale > thresholdHigh) {
+                renderMode = 'detailed';
+                detailOpacity = 1;
+            } else if (globalScale > thresholdLow) {
+                renderMode = 'transition';
+                const progress = (globalScale - thresholdLow) / (thresholdHigh - thresholdLow);
+                detailOpacity = Math.pow(progress, 2);
+            } else {
+                renderMode = 'simple';
+                detailOpacity = 0;
+            }
         }
 
-        // Draw button for focused doctor nodes
-        if (isDoctor && isFocused) {
-            yPos += padding / 2;
-            const buttonWidth = cardWidth - padding * 2;
-            const buttonX = node.x - buttonWidth / 2;
-            const buttonY = yPos;
+        let cardWidth, cardHeight;
+        if (detailOpacity > 0 || nodeCount < 50) {
+            const data = node.originalData as DataItem;
+            const label = data.label || 'Entity';
+            const allFields = Object.entries(data).filter(([key]) => key !== 'label' && key !== 'id');
+            const isExpanded = expandedNodes.has(node.id);
+            const fields = isExpanded ? allFields : allFields.slice(0, 5);
+            const isFocused = focusedNodeId === node.id;
 
-            // Button background
-            ctx.fillStyle = loadingPatients ? '#64748b' : '#3b82f6';
-            ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
+            const nodeType = data.label?.toLowerCase() || 'entity';
+            const hasSpecialAction = nodeType === 'doctor' && isFocused;
 
-            // Button border
-            ctx.strokeStyle = loadingPatients ? '#475569' : '#2563eb';
+            const padding = 12;
+            const fontSize = 11;
+            const headerFontSize = 14;
+            const typeFontSize = 9;
+            const buttonHeight = hasSpecialAction ? 26 : 0;
+
+            ctx.font = `${headerFontSize}px monospace bold`;
+            let maxWidth = ctx.measureText(label).width;
+
+            ctx.font = `${fontSize}px monospace`;
+            fields.forEach(([key, value]) => {
+                const displayValue = typeof value === 'string' && value.length > 20 ? value.substring(0, 20) + '...' : value;
+                const text = `${key}: ${displayValue}`;
+                maxWidth = Math.max(maxWidth, ctx.measureText(text).width + ctx.measureText(' I32').width);
+            });
+
+            cardWidth = maxWidth + padding * 3;
+            const fieldHeight = fontSize * 1.2;
+            cardHeight = headerFontSize + padding * 2 + fields.length * fieldHeight + buttonHeight;
+            if (allFields.length > 5) cardHeight += fieldHeight;
+            if (hasSpecialAction) cardHeight += padding;
+        }
+
+        // Set hit area based on render mode
+        if ((renderMode === 'detailed' || (renderMode === 'transition' && detailOpacity > 0.5)) && cardWidth && cardHeight) {
+            node.__hitType = 'rect';
+            node.__hitDimensions = [cardWidth, cardHeight];
+            node.__cardDimensions = [cardWidth, cardHeight];
+        } else {
+            const size = isHovered ? 8 : 4;
+            node.__hitType = 'circle';
+            node.__hitSize = size * 1.5;
+        }
+
+        // Save context state
+        const originalAlpha = ctx.globalAlpha;
+
+        // Draw simple view
+        if (renderMode === 'simple' || (renderMode === 'transition' && detailOpacity < 1)) {
+            const simpleOpacity = renderMode === 'simple' ? 1 : 1 - detailOpacity;
+            ctx.globalAlpha = simpleOpacity;
+            const size = isHovered ? 8 : 4;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
+            ctx.fillStyle = node.color || 'rgba(100, 100, 100, 0.8)';
+            ctx.fill();
+
+            if (isHovered && renderMode === 'simple') {
+                const label = node.originalData.label || 'Entity';
+                ctx.font = '10px monospace';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(label, node.x + size + 4, node.y + 3);
+            }
+            ctx.globalAlpha = originalAlpha;
+        }
+
+        // Draw detailed view
+        if (detailOpacity > 0) {
+            const data = node.originalData as DataItem;
+            const label = data.label || 'Entity';
+            const allFields = Object.entries(data).filter(([key]) => key !== 'label' && key !== 'id');
+            const isExpanded = expandedNodes.has(node.id);
+            const fields = isExpanded ? allFields : allFields.slice(0, 5);
+            const isFocused = focusedNodeId === node.id;
+
+            const nodeType = data.label?.toLowerCase() || 'entity';
+            const hasSpecialAction = nodeType === 'doctor' && isFocused;
+
+            const padding = 12;
+            const fontSize = 11;
+            const headerFontSize = 14;
+            const typeFontSize = 9;
+            const buttonHeight = hasSpecialAction ? 26 : 0;
+
+            ctx.globalAlpha = detailOpacity;
+
+            // Background
+            ctx.fillStyle = node.color || 'rgba(42, 42, 42, 0.98)';
+            ctx.fillRect(node.x - cardWidth! / 2, node.y - cardHeight! / 2, cardWidth!, cardHeight!);
+
+            // Border
+            ctx.strokeStyle = isHovered ? '#10b981' : 'rgba(80, 80, 80, 0.6)';
             ctx.lineWidth = 1;
-            ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
+            ctx.strokeRect(node.x - cardWidth! / 2, node.y - cardHeight! / 2, cardWidth!, cardHeight!);
 
-            // Button text
+            // Header
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
-            ctx.font = `10px monospace`;
-            ctx.fillText(loadingPatients ? 'Loading...' : 'View Patients', node.x, buttonY + 14);
+            ctx.font = `${headerFontSize}px monospace bold`;
+            ctx.fillText(label, node.x, node.y - cardHeight! / 2 + headerFontSize + padding / 2);
 
-            // Store button bounds for click detection
-            node.__buttonBounds = {
-                x: buttonX,
-                y: buttonY,
-                width: buttonWidth,
-                height: 22
-            };
+            // Fields
+            let yPos = node.y - cardHeight! / 2 + headerFontSize + padding * 1.5;
+            ctx.textAlign = 'left';
+            ctx.font = `${fontSize}px monospace`;
+            fields.forEach(([key, value]) => {
+                const fieldType = formatFieldType(key, value);
+                const displayValue = typeof value === 'string' && value.length > 20 ? value.substring(0, 20) + '...' : String(value);
+                const isId = key === 'id';
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillText(`${key}:`, node.x - cardWidth! / 2 + padding, yPos + fontSize / 1.5);
+
+                ctx.fillStyle = isId ? '#10b981' : '#e2e8f0';
+                ctx.fillText(displayValue, node.x - cardWidth! / 2 + padding + ctx.measureText(`${key}: `).width, yPos + fontSize / 1.5);
+
+                ctx.fillStyle = '#64748b';
+                ctx.font = `${typeFontSize}px monospace`;
+                ctx.fillText(fieldType, node.x + cardWidth! / 2 - padding - ctx.measureText(fieldType).width, yPos + fontSize / 1.5);
+                ctx.font = `${fontSize}px monospace`;
+
+                yPos += fontSize * 1.2;
+            });
+
+            // Expand/collapse
+            if (allFields.length > 5) {
+                const toggleText = isExpanded ? '- Show Less' : `+ ${allFields.length - 5} More`;
+                const toggleY = yPos + fontSize / 1.5;
+
+                const toggleWidth = ctx.measureText(toggleText).width;
+                const toggleX = -toggleWidth / 2;
+                node.__moreBounds = {
+                    x: toggleX,
+                    y: yPos - node.y,
+                    width: toggleWidth,
+                    height: fontSize * 1.2
+                };
+
+                ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981';
+                ctx.textAlign = 'center';
+                ctx.font = `10px monospace`;
+                ctx.fillText(toggleText, node.x, toggleY);
+
+                ctx.strokeStyle = isExpanded ? '#ef4444' : '#10b981';
+                ctx.lineWidth = 0.5;
+                ctx.setLineDash([2, 2]);
+                ctx.beginPath();
+                ctx.moveTo(node.x - toggleWidth / 2, toggleY + 2);
+                ctx.lineTo(node.x + toggleWidth / 2, toggleY + 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                yPos += fontSize * 1.2;
+            }
+
+            // Button for nodes with special actions
+            if (hasSpecialAction) {
+                yPos += padding / 2;
+                const buttonWidth = cardWidth! - padding * 2;
+                const buttonX = node.x - buttonWidth / 2;
+                const buttonY = yPos;
+
+                ctx.fillStyle = loadingPatients ? '#64748b' : '#3b82f6';
+                ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
+
+                ctx.strokeStyle = loadingPatients ? '#475569' : '#2563eb';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.font = `10px monospace`;
+
+                const buttonText = nodeType === 'doctor'
+                    ? (loadingPatients ? 'Loading...' : 'View Patients')
+                    : 'View Details';
+
+                ctx.fillText(buttonText, node.x, buttonY + 14);
+
+                node.__buttonBounds = {
+                    x: buttonX - node.x,
+                    y: buttonY - node.y,
+                    width: buttonWidth,
+                    height: 22
+                };
+            }
+
+            ctx.globalAlpha = originalAlpha;
         }
-
-        node.__cardDimensions = [cardWidth, cardHeight];
     };
 
     const graphData = useMemo(() => {
-        const allNodesList = Array.from(allNodes.values()).map(item => ({
-            id: item.id,
-            originalData: item,
-            color: getNodeColor(item),
-            x: (Math.random() - 0.5) * 500,
-            y: (Math.random() - 0.5) * 500,
-        }));
+        const allNodesList = Array.from(allNodes.values()).map((item, index) => {
+            let hash = 0;
+            for (let i = 0; i < item.id.length; i++) {
+                hash = ((hash << 5) - hash) + item.id.charCodeAt(i);
+                hash = hash & hash;
+            }
+            const angle = (hash % 360) * Math.PI / 180;
+            const radius = 200 + (Math.abs(hash) % 200);
+
+            const x = (focusedNodeId && item.id === focusedNodeId) ? 0 : Math.cos(angle) * radius;
+            const y = (focusedNodeId && item.id === focusedNodeId) ? 0 : Math.sin(angle) * radius;
+
+            return {
+                id: item.id,
+                originalData: item,
+                color: getNodeColor(item),
+                x,
+                y,
+            };
+        });
 
         // If a node is focused, only show that node and its connected nodes
         const nodes = focusedNodeId
@@ -307,6 +396,8 @@ const DataVisualization = () => {
 
         return { nodes, links };
     }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
+
+    const nodeCount = graphData.nodes.length;
 
     const fetchQueries = async () => {
         try {
@@ -417,41 +508,36 @@ const DataVisualization = () => {
 
     useEffect(() => {
         if (fgRef.current && graphData.nodes.length > 0) {
-            // Skip force reconfiguration when unfocusing to prevent reorganization
             const isUnfocusing = wasFocusedRef.current && !focusedNodeId;
             wasFocusedRef.current = !!focusedNodeId;
 
-            if (!isUnfocusing) {
-                // Configure forces for initial spacing with moderate repulsion
-                fgRef.current.d3Force('charge').strength(-2000);
-                fgRef.current.d3Force('link')
-                    .distance((link: any) => link.isVirtual ? 300 : 200)
-                    .strength((link: any) => link.isVirtual ? 0.02 : 0.1);
-                fgRef.current.d3Force('center').strength(0.02);
+            fgRef.current.d3Force('charge').strength(-1500);
+            fgRef.current.d3Force('link')
+                .distance((link: any) => link.isVirtual ? 300 : 80)
+                .strength((link: any) => link.isVirtual ? 0.02 : 0.4);
+            fgRef.current.d3Force('center').strength(0.02);
 
-                // Only zoom to fit on initial load (when there's no previous zoom state)
-                if (!focusedNodeId && !hasZoomedRef.current) {
-                    fgRef.current.zoomToFit(400, 300);
-                    hasZoomedRef.current = true;
+            if (!focusedNodeId && !hasZoomedRef.current) {
+                fgRef.current.zoomToFit(400, 300);
+                hasZoomedRef.current = true;
+            }
+
+            setTimeout(() => {
+                if (fgRef.current) {
+                    fgRef.current.d3Force('charge').strength(-400);
+                    fgRef.current.d3Force('link')
+                        .distance((link: any) => link.isVirtual ? 200 : 60)
+                        .strength((link: any) => link.isVirtual ? 0.01 : 0.3);
+                    fgRef.current.d3Force('center').strength(0.005);
                 }
+            }, 5000);
 
+            if (isUnfocusing) {
                 setTimeout(() => {
                     if (fgRef.current) {
-                        // Reduce forces after initial layout for minimal movement
-                        fgRef.current.d3Force('charge').strength(-500);
-                        fgRef.current.d3Force('link')
-                            .distance((link: any) => link.isVirtual ? 200 : 150)
-                            .strength((link: any) => link.isVirtual ? 0.01 : 0.05);
-                        fgRef.current.d3Force('center').strength(0.005);
+                        fgRef.current.zoomToFit(400, 100);
                     }
-                }, 5000);
-            } else {
-                // When unfocusing, keep forces minimal to prevent reorganization
-                if (fgRef.current) {
-                    fgRef.current.d3Force('charge').strength(-100);
-                    fgRef.current.d3Force('link').strength(0.01);
-                    fgRef.current.d3Force('center').strength(0.001);
-                }
+                }, 200);
             }
         }
     }, [graphData, focusedNodeId]);
@@ -632,12 +718,21 @@ const DataVisualization = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Top K:</label>
                     <Input
-                        type="number"
-                        value={topK}
-                        onChange={(e) => setTopK(Number(e.target.value) || 100)}
+                        type="text"
+                        value={topKInput}
+                        onChange={(e) => {
+                            setTopKInput(e.target.value);
+                        }}
+                        onBlur={() => {
+                            const num = Number(topKInput);
+                            if (!isNaN(num) && num > 0) {
+                                setTopK(num);
+                            } else {
+                                setTopKInput('100');
+                                setTopK(100);
+                            }
+                        }}
                         style={{ width: '80px' }}
-                        min={1}
-                        max={1000}
                     />
                 </div>
             </div>
@@ -646,10 +741,20 @@ const DataVisualization = () => {
                 graphData={graphData}
                 nodeCanvasObject={(node, ctx, globalScale) => drawNode(node, ctx, globalScale, node.id === hoveredNodeId)}
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-                    if (node.__cardDimensions) {
-                        const [w, h] = node.__cardDimensions;
+                    if (node.__hitType === 'circle' && node.__hitSize) {
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, node.__hitSize, 0, 2 * Math.PI, false);
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                    } else if (node.__hitType === 'rect' && node.__hitDimensions) {
+                        const [w, h] = node.__hitDimensions;
                         ctx.fillStyle = color;
                         ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
+                    } else {
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
+                        ctx.fillStyle = color;
+                        ctx.fill();
                     }
                 }}
                 onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
@@ -717,7 +822,7 @@ const DataVisualization = () => {
                         }
                     }
                 }}
-                linkColor={(link: any) => link.isVirtual ? 'rgba(100, 100, 100, 0.1)' : 'rgba(100, 200, 120, 0.5)'}
+                linkColor={(link: any) => link.isVirtual ? 'rgba(100, 100, 100, 0.1)' : 'rgba(100, 181, 246, 0.5)'}
                 linkWidth={(link: any) => 0.5}
                 linkDirectionalParticles={(link: any) => {
                     if (link.isVirtual) return 0;
@@ -737,19 +842,27 @@ const DataVisualization = () => {
                 warmupTicks={focusedNodeId ? 0 : 50}
                 enableNodeDrag={true}
                 onNodeDrag={(node: any) => {
+                    if (!isDraggingRef.current) {
+                        isDraggingRef.current = true;
+                        fgRef.current.d3Force('link').strength((link: any) => link.isVirtual ? 0 : 0.2);
+                        fgRef.current.d3Force('charge').strength(-100);
+                    }
                     node.fx = node.x;
                     node.fy = node.y;
                 }}
                 onNodeDragEnd={(node: any) => {
-                    // Keep the node fixed after drag to prevent graph reorganization
+                    isDraggingRef.current = false;
+                    fgRef.current.d3Force('link').strength((link: any) => link.isVirtual ? 0.01 : 0.3);
+                    fgRef.current.d3Force('charge').strength(-400);
                     node.fx = node.x;
                     node.fy = node.y;
+                    // Briefly pause and resume simulation to smooth reset
+                    fgRef.current.pauseAnimation();
+                    setTimeout(() => fgRef.current.resumeAnimation(), 50);
                 }}
                 onBackgroundClick={() => {
-                    // Click off to restore all nodes without zoom changes
                     setFocusedNodeId(null);
                     setSelectedDoctorNode(null);
-                    // Prevent any automatic zoom adjustments
                     if (fgRef.current) {
                         fgRef.current.pauseAnimation();
                         setTimeout(() => {
@@ -759,23 +872,16 @@ const DataVisualization = () => {
                         }, 100);
                     }
                 }}
+                onZoom={({ k }) => {
+                    if (zoomTimeoutRef.current) {
+                        clearTimeout(zoomTimeoutRef.current);
+                    }
+
+                    zoomTimeoutRef.current = setTimeout(() => {
+                        lastZoomRef.current = k;
+                    }, 50);
+                }}
             />
-            <div style={{
-                position: 'absolute',
-                bottom: 10,
-                left: 10,
-                zIndex: 10,
-                color: '#e0e0e0',
-                background: 'rgba(40, 40, 40, 0.9)',
-                padding: '10px',
-                borderRadius: '8px',
-                border: '1px solid rgba(80, 80, 80, 0.4)'
-            }}>
-                {allNodes.size > 0
-                    ? `Displaying ${allNodes.size} nodes (${graphData.links.filter((l: any) => !l.isVirtual).length} connections) - Top ${topK} per query`
-                    : 'Select queries and click "Add to Graph" to start visualizing'
-                }
-            </div>
 
         </div>
     );
