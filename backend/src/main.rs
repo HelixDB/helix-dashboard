@@ -6,9 +6,9 @@ use axum::{
 };
 use clap::{Parser, ValueEnum};
 use helix_rs::{HelixDB, HelixDBClient};
+use serde_json::{Map, Value};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use serde_json::{Map, Value};
 
 mod query_parser;
 mod schema_parser;
@@ -33,7 +33,12 @@ struct Args {
     source: DataSource,
     #[arg(value_name = "URL", required_if_eq("source", "cloud"))]
     cloud_url: Option<String>,
-    #[arg(short, long, default_value = "6969", help = "Port for local HelixDB instance")]
+    #[arg(
+        short,
+        long,
+        default_value = "6969",
+        help = "Port for local HelixDB instance"
+    )]
     port: u16,
 }
 
@@ -189,37 +194,51 @@ async fn get_endpoints_handler(
         DataSource::LocalIntrospect | DataSource::Cloud => {
             match fetch_cloud_introspect(&app_state.helix_url).await {
                 Ok(introspect_data) => {
-                    let endpoints = introspect_data.queries.into_iter().map(|query| {
-                        let parameters = if let serde_json::Value::Object(params) = query.parameters {
-                            params.into_iter().map(|(name, type_val)| {
-                                query_parser::QueryParameter {
-                                    name,
-                                    param_type: type_val.as_str().unwrap_or("String").to_string(),
-                                }
-                            }).collect()
-                        } else {
-                            vec![]
-                        };
-                        
-                        let method = if query.name.starts_with("create") || query.name.starts_with("add") || query.name.starts_with("assign") {
-                            "POST"
-                        } else if query.name.starts_with("update") {
-                            "PUT"
-                        } else if query.name.starts_with("delete") || query.name.starts_with("remove") {
-                            "DELETE"
-                        } else {
-                            "GET"
-                        };
-                        
-                        query_parser::ApiEndpointInfo {
-                            path: format!("/api/query/{}", query.name),
-                            method: method.to_string(),
-                            query_name: query.name,
-                            parameters,
-                        }
-                    }).collect();
+                    let endpoints = introspect_data
+                        .queries
+                        .into_iter()
+                        .map(|query| {
+                            let parameters =
+                                if let serde_json::Value::Object(params) = query.parameters {
+                                    params
+                                        .into_iter()
+                                        .map(|(name, type_val)| query_parser::QueryParameter {
+                                            name,
+                                            param_type: type_val
+                                                .as_str()
+                                                .unwrap_or("String")
+                                                .to_string(),
+                                        })
+                                        .collect()
+                                } else {
+                                    vec![]
+                                };
+
+                            let method = if query.name.starts_with("create")
+                                || query.name.starts_with("add")
+                                || query.name.starts_with("assign")
+                            {
+                                "POST"
+                            } else if query.name.starts_with("update") {
+                                "PUT"
+                            } else if query.name.starts_with("delete")
+                                || query.name.starts_with("remove")
+                            {
+                                "DELETE"
+                            } else {
+                                "GET"
+                            };
+
+                            query_parser::ApiEndpointInfo {
+                                path: format!("/api/query/{}", query.name),
+                                method: method.to_string(),
+                                query_name: query.name,
+                                parameters,
+                            }
+                        })
+                        .collect();
                     Json(endpoints)
-                },
+                }
                 Err(e) => {
                     eprintln!(
                         "Error fetching endpoints from {}: {}",
@@ -236,7 +255,6 @@ async fn get_endpoints_handler(
 struct IntrospectQuery {
     name: String,
     parameters: serde_json::Value,
-    returns: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -270,14 +288,14 @@ fn sort_json_object(value: Value) -> Value {
     match value {
         Value::Object(map) => {
             let mut sorted_map = Map::new();
-            
+
             let mut numeric_keys: Vec<(String, Value)> = vec![];
             let mut id_key: Option<(String, Value)> = None;
             let mut other_keys: Vec<(String, Value)> = vec![];
-            
+
             for (key, val) in map {
                 let sorted_val = sort_json_object(val);
-                
+
                 if key.chars().all(|c| c.is_numeric()) {
                     numeric_keys.push((key, sorted_val));
                 } else if key == "id" {
@@ -286,11 +304,13 @@ fn sort_json_object(value: Value) -> Value {
                     other_keys.push((key, sorted_val));
                 }
             }
-            
+
             numeric_keys.sort_by(|(a, _), (b, _)| {
-                a.parse::<u64>().unwrap_or(0).cmp(&b.parse::<u64>().unwrap_or(0))
+                a.parse::<u64>()
+                    .unwrap_or(0)
+                    .cmp(&b.parse::<u64>().unwrap_or(0))
             });
-            
+
             // Insert in order: numeric keys, id, then others
             for (k, v) in numeric_keys {
                 sorted_map.insert(k, v);
@@ -301,12 +321,10 @@ fn sort_json_object(value: Value) -> Value {
             for (k, v) in other_keys {
                 sorted_map.insert(k, v);
             }
-            
+
             Value::Object(sorted_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.into_iter().map(sort_json_object).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_json_object).collect()),
         other => other,
     }
 }
