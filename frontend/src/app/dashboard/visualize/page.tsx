@@ -56,9 +56,6 @@ const DataVisualization = () => {
     useEffect(() => {
         if (!fgRef.current) return;
 
-        // Reset zoom flag when focus changes
-        hasZoomedRef.current = false;
-
         if (focusedNodeId) {
             setTimeout(() => {
                 if (!fgRef.current) return;
@@ -72,22 +69,29 @@ const DataVisualization = () => {
                 const focusedNode = currentGraphData?.nodes?.find((n: any) => n.id === focusedNodeId);
                 if (focusedNode) {
                     fgRef.current.centerAt(focusedNode.x, focusedNode.y, 1000);
-                    if (!hasZoomedRef.current) {
-                        fgRef.current.zoom(3, 1000);
-                        hasZoomedRef.current = true; // mark that we've zoomed for this focus
-                    }
+                    fgRef.current.zoom(3, 1000);
                 }
             }, 100);
-        } else {
-            // No action needed here; zoom fitting is handled by the graphData effect
         }
     }, [focusedNodeId]);
 
     const getNodeColor = useCallback((item: DataItem): string => {
-        const label = item.label?.toLowerCase() || '';
-        const hash = label.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#f97316', '#a855f7'];
-        return colors[hash % colors.length] || '#6b7280';
+        // Create a hash from the node ID for consistent but unique colors
+        const id = item.id || '';
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) {
+            const char = id.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+
+        const baseGray = 42;
+        const variation = Math.abs(hash % 20) - 10;
+        const r = baseGray + variation;
+        const g = baseGray + variation;
+        const b = baseGray + variation + Math.abs((hash >> 8) % 10);
+
+        return `rgba(${r}, ${g}, ${b}, 0.98)`;
     }, []);
 
     const formatFieldType = (key: string, value: any): string => {
@@ -131,8 +135,8 @@ const DataVisualization = () => {
         if (allFields.length > 5) cardHeight += fieldHeight;
         if (isDoctor && isFocused) cardHeight += padding;
 
-        // Background
-        ctx.fillStyle = 'rgba(42, 42, 42, 0.98)';
+        // Background - use the node's generated color
+        ctx.fillStyle = node.color || 'rgba(42, 42, 42, 0.98)';
         ctx.fillRect(node.x - cardWidth / 2, node.y - cardHeight / 2, cardWidth, cardHeight);
 
         // Border
@@ -173,30 +177,30 @@ const DataVisualization = () => {
         if (allFields.length > 5) {
             const toggleText = isExpanded ? '- Show Less' : `+ ${allFields.length - 5} More`;
             const toggleY = yPos + fontSize / 1.5;
-            
+
             // Create clickable area for toggle text
             const toggleWidth = ctx.measureText(toggleText).width;
-            const toggleX = -toggleWidth / 2; // Relative to node center
+            const toggleX = -toggleWidth / 2;
             node.__moreBounds = {
                 x: toggleX,
-                y: yPos - node.y, // Make it relative to node center
+                y: yPos - node.y,
                 width: toggleWidth,
                 height: fieldHeight
             };
-            
+
             // Draw toggle text
-            ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981'; // Red for collapse, green for expand
+            ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981';
             ctx.textAlign = 'center';
             ctx.font = `10px monospace`;
             ctx.fillText(toggleText, node.x, toggleY);
-            
+
             // Add subtle underline to indicate clickable
             ctx.strokeStyle = isExpanded ? '#ef4444' : '#10b981';
             ctx.lineWidth = 0.5;
             ctx.setLineDash([2, 2]);
             ctx.beginPath();
-            ctx.moveTo(node.x - toggleWidth/2, toggleY + 2);
-            ctx.lineTo(node.x + toggleWidth/2, toggleY + 2);
+            ctx.moveTo(node.x - toggleWidth / 2, toggleY + 2);
+            ctx.lineTo(node.x + toggleWidth / 2, toggleY + 2);
             ctx.stroke();
             ctx.setLineDash([]);
             yPos += fieldHeight;
@@ -209,11 +213,14 @@ const DataVisualization = () => {
             const buttonX = node.x - buttonWidth / 2;
             const buttonY = yPos;
 
-            // Button background (change color if loading)
-            ctx.fillStyle = loadingPatients ? 'rgba(75, 85, 99, 0.9)' : 'rgba(16, 185, 129, 0.9)';
+            // Button background
+            ctx.fillStyle = loadingPatients ? '#64748b' : '#3b82f6';
+            ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
 
             // Button border
-            ctx.strokeStyle = loadingPatients ? 'rgba(75, 85, 99, 0.6)' : 'rgba(16, 185, 129, 0.6)';
+            ctx.strokeStyle = loadingPatients ? '#475569' : '#2563eb';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
 
             // Button text
             ctx.fillStyle = '#ffffff';
@@ -345,6 +352,8 @@ const DataVisualization = () => {
 
         setLoading(true);
         setError(null);
+        setFocusedNodeId(null);
+        setSelectedDoctorNode(null);
 
         try {
             const promises = selectedQueries.map(async (queryName) => {
@@ -362,7 +371,7 @@ const DataVisualization = () => {
 
             const results = await Promise.all(promises);
 
-            const newNodes = new Map(allNodes);
+            const newNodes = new Map();
             const newEdges: any[] = [];
 
             results.forEach((result) => {
@@ -403,30 +412,47 @@ const DataVisualization = () => {
         }
     };
 
+    // Track if we're transitioning from focused to unfocused
+    const wasFocusedRef = useRef(false);
+
     useEffect(() => {
         if (fgRef.current && graphData.nodes.length > 0) {
-            // Configure forces for initial spacing with stronger repulsion
-            fgRef.current.d3Force('charge').strength(-5000);
-            fgRef.current.d3Force('link')
-                .distance((link: any) => link.isVirtual ? 500 : 300)
-                .strength((link: any) => link.isVirtual ? 0.05 : 0.3);
-            fgRef.current.d3Force('center').strength(0.05);
+            // Skip force reconfiguration when unfocusing to prevent reorganization
+            const isUnfocusing = wasFocusedRef.current && !focusedNodeId;
+            wasFocusedRef.current = !!focusedNodeId;
 
-            // Only zoom to fit if no node is focused (meaning we're not in expanded view)
-            if (!focusedNodeId) {
-                fgRef.current.zoomToFit(400, 300);
-            }
+            if (!isUnfocusing) {
+                // Configure forces for initial spacing with moderate repulsion
+                fgRef.current.d3Force('charge').strength(-2000);
+                fgRef.current.d3Force('link')
+                    .distance((link: any) => link.isVirtual ? 300 : 200)
+                    .strength((link: any) => link.isVirtual ? 0.02 : 0.1);
+                fgRef.current.d3Force('center').strength(0.02);
 
-            setTimeout(() => {
-                if (fgRef.current) {
-                    // Reduce forces after initial layout for less movement
-                    fgRef.current.d3Force('charge').strength(-1000);
-                    fgRef.current.d3Force('link')
-                        .distance((link: any) => link.isVirtual ? 400 : 250)
-                        .strength((link: any) => link.isVirtual ? 0.05 : 0.2);
-                    fgRef.current.d3Force('center').strength(0.01);
+                // Only zoom to fit on initial load (when there's no previous zoom state)
+                if (!focusedNodeId && !hasZoomedRef.current) {
+                    fgRef.current.zoomToFit(400, 300);
+                    hasZoomedRef.current = true;
                 }
-            }, 5000);
+
+                setTimeout(() => {
+                    if (fgRef.current) {
+                        // Reduce forces after initial layout for minimal movement
+                        fgRef.current.d3Force('charge').strength(-500);
+                        fgRef.current.d3Force('link')
+                            .distance((link: any) => link.isVirtual ? 200 : 150)
+                            .strength((link: any) => link.isVirtual ? 0.01 : 0.05);
+                        fgRef.current.d3Force('center').strength(0.005);
+                    }
+                }, 5000);
+            } else {
+                // When unfocusing, keep forces minimal to prevent reorganization
+                if (fgRef.current) {
+                    fgRef.current.d3Force('charge').strength(-100);
+                    fgRef.current.d3Force('link').strength(0.01);
+                    fgRef.current.d3Force('center').strength(0.001);
+                }
+            }
         }
     }, [graphData, focusedNodeId]);
 
@@ -473,7 +499,7 @@ const DataVisualization = () => {
                         return null;
                     }
                     const patientData = await patientResponse.json();
-                    
+
                     // Extract patient from response (similar to edge extraction)
                     let patient = null;
                     for (const key in patientData) {
@@ -485,7 +511,7 @@ const DataVisualization = () => {
                             break;
                         }
                     }
-                    
+
                     if (patient) {
                         return {
                             ...patient,
@@ -644,7 +670,7 @@ const DataVisualization = () => {
                             const moreBounds = node.__moreBounds;
                             const relX = graphCoords.x - node.x;
                             const relY = graphCoords.y - node.y;
-                            
+
                             if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
                                 relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
                                 // Toggle expanded state
@@ -684,16 +710,15 @@ const DataVisualization = () => {
                         setSelectedDoctorNode(nodeData);
                     } else {
                         if (fgRef.current) {
+                            // Center the node and zoom to a comfortable level
                             fgRef.current.centerAt(node.x, node.y, 400);
-                            const currentZoom = fgRef.current.zoom();
-                            if (currentZoom < 1.5) {
-                                fgRef.current.zoom(1.5, 400);
-                            }
+                            // Always zoom to a consistent level for better visibility
+                            fgRef.current.zoom(2.5, 400);
                         }
                     }
                 }}
-                linkColor={(link: any) => link.isVirtual ? 'rgba(100, 100, 100, 0.1)' : 'rgba(150, 150, 150, 0.6)'}
-                linkWidth={(link: any) => link.isVirtual ? 0.5 : 2}
+                linkColor={(link: any) => link.isVirtual ? 'rgba(100, 100, 100, 0.1)' : 'rgba(100, 200, 120, 0.5)'}
+                linkWidth={(link: any) => 0.5}
                 linkDirectionalParticles={(link: any) => {
                     if (link.isVirtual) return 0;
                     if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
@@ -703,27 +728,36 @@ const DataVisualization = () => {
                 linkDirectionalParticleSpeed={0.005}
                 linkDirectionalArrowLength={(link: any) => link.isVirtual ? 0 : 6}
                 linkDirectionalArrowRelPos={1}
-                cooldownTicks={100}
-                cooldownTime={10000}
+                cooldownTicks={focusedNodeId ? 50 : 100}
+                cooldownTime={focusedNodeId ? 5000 : 10000}
                 backgroundColor="#1a1a1a"
-                d3AlphaDecay={0.02}
+                d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
                 d3VelocityDecay={0.8}
                 d3AlphaMin={0.001}
-                warmupTicks={50}
+                warmupTicks={focusedNodeId ? 0 : 50}
                 enableNodeDrag={true}
                 onNodeDrag={(node: any) => {
                     node.fx = node.x;
-                    node.fy = node.y;   
+                    node.fy = node.y;
                 }}
                 onNodeDragEnd={(node: any) => {
-                    // Let the node be free to move again after drag
-                    node.fx = undefined;
-                    node.fy = undefined;
+                    // Keep the node fixed after drag to prevent graph reorganization
+                    node.fx = node.x;
+                    node.fy = node.y;
                 }}
                 onBackgroundClick={() => {
-                    // Click off to restore all nodes
+                    // Click off to restore all nodes without zoom changes
                     setFocusedNodeId(null);
                     setSelectedDoctorNode(null);
+                    // Prevent any automatic zoom adjustments
+                    if (fgRef.current) {
+                        fgRef.current.pauseAnimation();
+                        setTimeout(() => {
+                            if (fgRef.current) {
+                                fgRef.current.resumeAnimation();
+                            }
+                        }, 100);
+                    }
                 }}
             />
             <div style={{
