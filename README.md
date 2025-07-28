@@ -27,6 +27,7 @@ Backend:
 - Cloud mode: run `cargo run -- cloud http://your-helix-db-url:6969`
 
 Frontend:
+- cd into the `frontend` directory and run `npm install` to install the dependencies
 - Run `npm run dev` to start the frontend
 - The frontend will be available at `http://localhost:3000`
 
