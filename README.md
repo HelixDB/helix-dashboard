@@ -9,22 +9,23 @@ This is a dashboard for helixdb. It allows you to view and interact with your he
 
 ## Query Format
 
-**This works best** if your queries have this format:
-- post should start with "create" or "link" e.g "createPatient" or "linkPatientToDoctor"
-- get should start with "get" e.g "getPatient" or "getDoctor"
-- put should start with "update" e.g "updatePatient" or "updateDoctor"
-- delete should start with "delete" e.g "deletePatient" or "deleteDoctor"
-
-
+The dashboard works best when your queries follow this naming convention:
+    - **Creating** or **linking** nodes and edges should start with "create" or "link" (e.g., "createPatient" or "linkPatientToDoctor")
+    - **Searching** or **getting** nodes and edges should start with "get" (e.g., "getPatient" or "getDoctor")
+    - **Updating** nodes and edges should start with "update" (e.g., "updatePatient" or "updateDoctor")
+    - **Deleting** nodes and edges should start with "delete" (e.g., "deletePatient" or "deleteDoctor")
 
 ## Setup
 
 Backend:
-- Local introspect (default): have your helixdb up, then run `cargo run` or `cargo run -- local-introspect`
-  - To specify a custom port for your local HelixDB instance: `cargo run -- --port 8888` or `cargo run -- -p 8888`
-- Local file: add your helixdb-cfg into the backend folder and run `cargo run -- local-file`
-  - To specify a custom port: `cargo run -- local-file --port 8888`
-- Cloud mode: run `cargo run -- cloud http://your-helix-db-url:6969`
+1. Navigate to the `backend` directory and ensure your HelixDB is running either locally or on a cloud server
+2. You then have 3 options:
+    - **Local introspect** (default): Run `cargo run` or `cargo run -- local-introspect`
+    - **Local file**: Read queries and schema from your local file, add your helixdb-cfg to the backend folder and run `cargo run -- local-file`
+    - **Cloud mode**: Run `cargo run -- cloud http://your-helix-db-url:6969`
+
+- For local introspect, you can specify a custom port for your HelixDB instance: `cargo run -- --port 8888` or `cargo run -- -p 8888`
+- For local file: `cargo run -- local-file --port 8888`
 
 Frontend:
 - cd into the `frontend` directory and run `npm install` to install the dependencies
