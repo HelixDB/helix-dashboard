@@ -10,10 +10,11 @@ This is a dashboard for helixdb. It allows you to view and interact with your he
 ## Query Format
 
 The dashboard works best when your queries follow this naming convention:
-    - **Creating** or **linking** nodes and edges should start with "create" or "link" (e.g., "createPatient" or "linkPatientToDoctor")
-    - **Searching** or **getting** nodes and edges should start with "get" (e.g., "getPatient" or "getDoctor")
-    - **Updating** nodes and edges should start with "update" (e.g., "updatePatient" or "updateDoctor")
-    - **Deleting** nodes and edges should start with "delete" (e.g., "deletePatient" or "deleteDoctor")
+
+- **Creating** or **linking** nodes and edges should start with "create" or "link" (e.g., "createPatient" or "linkPatientToDoctor")
+- **Searching** or **getting** nodes and edges should start with "get" (e.g., "getPatient" or "getDoctor")
+- **Updating** nodes and edges should start with "update" (e.g., "updatePatient" or "updateDoctor")
+- **Deleting** nodes and edges should start with "delete" (e.g., "deletePatient" or "deleteDoctor")
 
 ## Setup
 
