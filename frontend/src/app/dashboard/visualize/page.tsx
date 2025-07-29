@@ -66,6 +66,7 @@ const DataVisualization = () => {
     const [capturedPositions, setCapturedPositions] = useState<Map<string, { x: number, y: number }>>(new Map());
     const [graphReady, setGraphReady] = useState(false);
     const [loadDoctorsWithPatients, setLoadDoctorsWithPatients] = useState(false);
+    const [, forceUpdate] = useState({});
 
     // Simple zoom to fit when focused node changes
     useEffect(() => {
@@ -120,25 +121,35 @@ const DataVisualization = () => {
     const drawNode = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, isHovered: boolean) => {
         const currentNodeCount = allNodes.size;
 
-        // Debug: Log when drawNode is called
-        if (currentNodeCount < 10) { // Only log for small graphs to avoid spam
-            console.log('drawNode called for:', node.id, { globalScale, isHovered, currentNodeCount });
-        }
+        const isNodeInViewport = () => {
+            if (!fgRef.current) return true;
+
+            const viewportWidth = ctx.canvas.width;
+            const viewportHeight = ctx.canvas.height;
+
+            const screenCoords = fgRef.current.graph2ScreenCoords(node.x, node.y);
+
+            const padding = 100;
+
+            return screenCoords.x >= -padding &&
+                screenCoords.x <= viewportWidth + padding &&
+                screenCoords.y >= -padding &&
+                screenCoords.y <= viewportHeight + padding;
+        };
 
         const thresholdLow = 0.8;
         const thresholdHigh = 1.3;
         let renderMode: 'simple' | 'detailed' | 'transition' = 'simple';
         let detailOpacity = 0;
 
-        // Determine render mode based on node count and zoom level
         if (currentNodeCount < 50) {
             renderMode = 'detailed';
             detailOpacity = 1;
         } else {
-            if (globalScale > thresholdHigh) {
+            if (isNodeInViewport() && globalScale > thresholdHigh) {
                 renderMode = 'detailed';
                 detailOpacity = 1;
-            } else if (globalScale > thresholdLow) {
+            } else if (isNodeInViewport() && globalScale > thresholdLow) {
                 renderMode = 'transition';
                 const progress = (globalScale - thresholdLow) / (thresholdHigh - thresholdLow);
                 detailOpacity = Math.pow(progress, 2);
@@ -946,6 +957,7 @@ const DataVisualization = () => {
 
     const wasFocusedRef = useRef(false);
 
+
     return (
         <div style={{ position: 'relative', height: '100vh', width: '100%' }} ref={containerRef}>
             <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: 10 }}>
@@ -1181,6 +1193,8 @@ const DataVisualization = () => {
                 d3AlphaMin={0.001}
                 warmupTicks={focusedNodeId ? 0 : 50}
                 enableNodeDrag={true}
+                minZoom={0.01}
+                maxZoom={100}
                 onNodeDrag={(node: any) => {
                     if (!isDraggingRef.current) {
                         isDraggingRef.current = true;
