@@ -84,6 +84,7 @@ const DataVisualization = () => {
 
     const getNodeColor = useCallback((item: DataItem): string => {
         const label = item.label || 'Entity';
+
         let hash = 0;
         for (let i = 0; i < label.length; i++) {
             const char = label.charCodeAt(i);
@@ -91,20 +92,20 @@ const DataVisualization = () => {
             hash = hash & hash;
         }
 
-        const baseColor = Math.abs(hash % 6);
-        if (baseColor === 0) {
-            return `rgba(70, 130, 180, 0.9)`;
-        } else if (baseColor === 1) {
-            return `rgba(85, 107, 47, 0.9)`;
-        } else if (baseColor === 2) {
-            return `rgba(75, 0, 130, 0.9)`;
-        } else if (baseColor === 3) {
-            return `rgba(105, 105, 105, 0.9)`;
-        } else if (baseColor === 4) {
-            return `rgba(47, 79, 79, 0.9)`;
-        } else {
-            return `rgba(139, 69, 19, 0.9)`;
-        }
+        const colors = [
+            '#3b82f6',
+            '#10b981',
+            '#f59e0b',
+            '#8b5cf6',
+            '#06b6d4',
+            '#ec4899',
+            '#f97316',
+            '#14b8a6',
+            '#a855f7',
+            '#eab308'
+        ];
+
+        return colors[Math.abs(hash) % colors.length];
     }, []);
 
     const formatFieldType = (key: string, value: any): string => {
@@ -203,12 +204,18 @@ const DataVisualization = () => {
             const size = isHovered ? 16 : 12;
             ctx.beginPath();
             ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
-            ctx.fillStyle = node.color || 'rgba(100, 100, 100, 0.9)';
+            ctx.fillStyle = node.color || '#64748b';
             ctx.fill();
 
-            // Add a border for better visibility
-            ctx.strokeStyle = isHovered ? '#10b981' : 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 1;
+            if (isHovered) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = node.color || '#64748b';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            ctx.strokeStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = isHovered ? 2 : 1;
             ctx.stroke();
 
             if (isHovered && renderMode === 'simple') {
@@ -240,14 +247,23 @@ const DataVisualization = () => {
 
             ctx.globalAlpha = detailOpacity;
 
-            // Background
-            ctx.fillStyle = node.color || 'rgba(42, 42, 42, 0.98)';
+            const gradient = ctx.createLinearGradient(
+                node.x - cardWidth! / 2,
+                node.y - cardHeight! / 2,
+                node.x - cardWidth! / 2,
+                node.y + cardHeight! / 2
+            );
+            gradient.addColorStop(0, '#1e293b');
+            gradient.addColorStop(1, '#0f172a');
+            ctx.fillStyle = gradient;
             ctx.fillRect(node.x - cardWidth! / 2, node.y - cardHeight! / 2, cardWidth!, cardHeight!);
 
-            // Border
-            ctx.strokeStyle = isHovered ? '#10b981' : 'rgba(80, 80, 80, 0.6)';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = isHovered ? node.color : 'rgba(100, 116, 139, 0.5)';
+            ctx.lineWidth = isHovered ? 2 : 1;
             ctx.strokeRect(node.x - cardWidth! / 2, node.y - cardHeight! / 2, cardWidth!, cardHeight!);
+
+            ctx.fillStyle = node.color || '#64748b';
+            ctx.fillRect(node.x - cardWidth! / 2, node.y - cardHeight! / 2, cardWidth!, 3);
 
             // Header
             ctx.fillStyle = '#ffffff';
@@ -264,13 +280,13 @@ const DataVisualization = () => {
                 const displayValue = typeof value === 'string' && value.length > 20 ? value.substring(0, 20) + '...' : String(value);
                 const isId = key === 'id';
 
-                ctx.fillStyle = '#94a3b8';
+                ctx.fillStyle = '#64748b';
                 ctx.fillText(`${key}:`, node.x - cardWidth! / 2 + padding, yPos + fontSize / 1.5);
 
-                ctx.fillStyle = isId ? '#10b981' : '#e2e8f0';
+                ctx.fillStyle = isId ? '#22d3ee' : '#cbd5e1';
                 ctx.fillText(displayValue, node.x - cardWidth! / 2 + padding + ctx.measureText(`${key}: `).width, yPos + fontSize / 1.5);
 
-                ctx.fillStyle = '#64748b';
+                ctx.fillStyle = '#475569';
                 ctx.font = `${typeFontSize}px monospace`;
                 ctx.fillText(fieldType, node.x + cardWidth! / 2 - padding - ctx.measureText(fieldType).width, yPos + fontSize / 1.5);
                 ctx.font = `${fontSize}px monospace`;
@@ -292,12 +308,12 @@ const DataVisualization = () => {
                     height: fontSize * 1.2
                 };
 
-                ctx.fillStyle = isExpanded ? '#ef4444' : '#10b981';
+                ctx.fillStyle = isExpanded ? '#f87171' : '#34d399';
                 ctx.textAlign = 'center';
                 ctx.font = `10px monospace`;
                 ctx.fillText(toggleText, node.x, toggleY);
 
-                ctx.strokeStyle = isExpanded ? '#ef4444' : '#10b981';
+                ctx.strokeStyle = isExpanded ? '#f87171' : '#34d399';
                 ctx.lineWidth = 0.5;
                 ctx.setLineDash([2, 2]);
                 ctx.beginPath();
@@ -315,10 +331,18 @@ const DataVisualization = () => {
                 const buttonX = node.x - buttonWidth / 2;
                 const buttonY = yPos;
 
-                ctx.fillStyle = loadingPatients ? '#64748b' : '#3b82f6';
+                const btnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + 22);
+                if (loadingPatients) {
+                    btnGradient.addColorStop(0, '#475569');
+                    btnGradient.addColorStop(1, '#334155');
+                } else {
+                    btnGradient.addColorStop(0, '#3b82f6');
+                    btnGradient.addColorStop(1, '#2563eb');
+                }
+                ctx.fillStyle = btnGradient;
                 ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
 
-                ctx.strokeStyle = loadingPatients ? '#475569' : '#2563eb';
+                ctx.strokeStyle = loadingPatients ? '#64748b' : '#60a5fa';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
 
@@ -1139,7 +1163,7 @@ const DataVisualization = () => {
                         }
                     }
                 }}
-                linkColor={() => "#658594"}
+                linkColor={() => "#334155"}
                 linkWidth={2}
                 linkDirectionalParticles={(link: any) => {
                     if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
