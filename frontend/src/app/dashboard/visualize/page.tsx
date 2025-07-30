@@ -12,7 +12,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Users } from 'lucide-react';
+import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Users, UserPlus, UserMinus } from 'lucide-react';
 
 interface DataItem {
     id: string;
@@ -67,6 +67,24 @@ const DataVisualization = () => {
     const [graphReady, setGraphReady] = useState(false);
     const [loadDoctorsWithPatients, setLoadDoctorsWithPatients] = useState(false);
     const [, forceUpdate] = useState({});
+    const [showCreateForm, setShowCreateForm] = useState(false);
+    const [createType, setCreateType] = useState<'doctor' | 'patient'>('doctor');
+    const [newDoctorName, setNewDoctorName] = useState('');
+    const [newPatientData, setNewPatientData] = useState({
+        name: '',
+        age: '',
+        gender: '',
+        blood_type: '',
+        medical_condition: '',
+        date_of_admission: '',
+        discharge_date: '',
+        insurance_provider: '',
+        billing_amount: '',
+        room_number: '',
+        admission_type: '',
+        medication: '',
+        test_results: ''
+    });
 
     // Simple zoom to fit when focused node changes
     useEffect(() => {
@@ -170,12 +188,15 @@ const DataVisualization = () => {
 
             const nodeType = data.label?.toLowerCase() || 'entity';
             const hasSpecialAction = nodeType === 'doctor' && isFocused;
+            const hasDeleteButton = (nodeType === 'doctor' || nodeType === 'patient') && isFocused;
 
             const padding = 12;
             const fontSize = 11;
             const headerFontSize = 14;
             const typeFontSize = 9;
-            const buttonHeight = hasSpecialAction ? 26 : 0;
+            const actionButtonHeight = hasSpecialAction ? 26 : 0;
+            const deleteButtonHeight = hasDeleteButton ? 26 : 0;
+            const buttonHeight = actionButtonHeight + deleteButtonHeight + (hasSpecialAction && hasDeleteButton ? 4 : 0);
 
             ctx.font = `${headerFontSize}px monospace bold`;
             let maxWidth = ctx.measureText(label).width;
@@ -249,12 +270,15 @@ const DataVisualization = () => {
 
             const nodeType = data.label?.toLowerCase() || 'entity';
             const hasSpecialAction = nodeType === 'doctor' && isFocused;
+            const hasDeleteButton = (nodeType === 'doctor' || nodeType === 'patient') && isFocused;
 
             const padding = 12;
             const fontSize = 11;
             const headerFontSize = 14;
             const typeFontSize = 9;
-            const buttonHeight = hasSpecialAction ? 26 : 0;
+            const actionButtonHeight = hasSpecialAction ? 26 : 0;
+            const deleteButtonHeight = hasDeleteButton ? 26 : 0;
+            const buttonHeight = actionButtonHeight + deleteButtonHeight + (hasSpecialAction && hasDeleteButton ? 4 : 0);
 
             ctx.globalAlpha = detailOpacity;
 
@@ -368,6 +392,37 @@ const DataVisualization = () => {
                 ctx.fillText(buttonText, node.x, buttonY + 14);
 
                 node.__buttonBounds = {
+                    x: buttonX - node.x,
+                    y: buttonY - node.y,
+                    width: buttonWidth,
+                    height: 22
+                };
+                
+                yPos += 26;
+            }
+
+            if (hasDeleteButton) {
+                yPos += padding / 2;
+                const buttonWidth = cardWidth! - padding * 2;
+                const buttonX = node.x - buttonWidth / 2;
+                const buttonY = yPos;
+
+                const deleteBtnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + 22);
+                deleteBtnGradient.addColorStop(0, '#ef4444');
+                deleteBtnGradient.addColorStop(1, '#dc2626');
+                ctx.fillStyle = deleteBtnGradient;
+                ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
+
+                ctx.strokeStyle = '#f87171';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.font = `10px monospace`;
+                ctx.fillText('Delete', node.x, buttonY + 14);
+
+                node.__deleteBounds = {
                     x: buttonX - node.x,
                     y: buttonY - node.y,
                     width: buttonWidth,
@@ -957,6 +1012,135 @@ const DataVisualization = () => {
 
     const wasFocusedRef = useRef(false);
 
+    const createDoctor = async () => {
+        if (!newDoctorName.trim()) return;
+        
+        try {
+            const response = await fetch('http://127.0.0.1:8080/api/query/createDoctor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name: newDoctorName.trim() })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Doctor created:', result);
+            
+            // Add the new doctor to the graph
+            if (result.doctor) {
+                const newNodes = new Map(allNodes);
+                newNodes.set(result.doctor.id, { ...result.doctor, label: 'Doctor' });
+                setAllNodes(newNodes);
+            }
+            
+            // Reset form
+            setNewDoctorName('');
+            setShowCreateForm(false);
+        } catch (error) {
+            console.error('Failed to create doctor:', error);
+            setError('Failed to create doctor');
+        }
+    };
+
+    const createPatient = async () => {
+        if (!newPatientData.name.trim()) return;
+        
+        try {
+            const patientPayload = {
+                name: newPatientData.name.trim(),
+                age: parseInt(newPatientData.age) || 0,
+                gender: newPatientData.gender || '',
+                blood_type: newPatientData.blood_type || '',
+                medical_condition: newPatientData.medical_condition || '',
+                date_of_admission: newPatientData.date_of_admission || '',
+                discharge_date: newPatientData.discharge_date || '',
+                insurance_provider: newPatientData.insurance_provider || '',
+                billing_amount: parseFloat(newPatientData.billing_amount) || 0.0,
+                room_number: newPatientData.room_number || '',
+                admission_type: newPatientData.admission_type || '',
+                medication: newPatientData.medication || '',
+                test_results: newPatientData.test_results || ''
+            };
+            
+            const response = await fetch('http://127.0.0.1:8080/api/query/createPatient', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(patientPayload)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Patient created:', result);
+            
+            // Add the new patient to the graph
+            if (result.patient) {
+                const newNodes = new Map(allNodes);
+                newNodes.set(result.patient.id, { ...result.patient, label: 'Patient' });
+                setAllNodes(newNodes);
+            }
+            
+            // Reset form
+            setNewPatientData({
+                name: '',
+                age: '',
+                gender: '',
+                blood_type: '',
+                medical_condition: '',
+                date_of_admission: '',
+                discharge_date: '',
+                insurance_provider: '',
+                billing_amount: '',
+                room_number: '',
+                admission_type: '',
+                medication: '',
+                test_results: ''
+            });
+            setShowCreateForm(false);
+        } catch (error) {
+            console.error('Failed to create patient:', error);
+            setError('Failed to create patient');
+        }
+    };
+
+    const deleteNode = async (nodeId: string, nodeType: string) => {
+        try {
+            const queryName = nodeType.toLowerCase() === 'doctor' ? 'deleteDoctor' : 'deletePatient';
+            const paramName = nodeType.toLowerCase() === 'doctor' ? 'doctor_id' : 'patient_id';
+            
+            const response = await fetch(`http://127.0.0.1:8080/api/query/${queryName}?${paramName}=${nodeId}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const newNodes = new Map(allNodes);
+            newNodes.delete(nodeId);
+            setAllNodes(newNodes);
+            
+            const newEdges = edgeData.filter(edge => 
+                edge.from_node !== nodeId && edge.to_node !== nodeId
+            );
+            setEdgeData(newEdges);
+            
+            console.log(`${nodeType} deleted successfully`);
+        } catch (error) {
+            console.error(`Failed to delete ${nodeType}:`, error);
+            setError(`Failed to delete ${nodeType}`);
+        }
+    };
+
 
     return (
         <div style={{ position: 'relative', height: '100vh', width: '100%' }} ref={containerRef}>
@@ -1028,6 +1212,9 @@ const DataVisualization = () => {
                 <Button onClick={clearGraph}>
                     <RotateCcw size={16} /> Clear
                 </Button>
+                <Button onClick={() => setShowCreateForm(!showCreateForm)}>
+                    <UserPlus size={16} /> Create
+                </Button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Top K:</label>
                     <Input
@@ -1084,6 +1271,156 @@ const DataVisualization = () => {
                     </div>
                 )}
             </div>
+            
+            {showCreateForm && (
+                <div style={{ 
+                    position: 'absolute', 
+                    top: 70, 
+                    left: 10, 
+                    background: '#1e293b', 
+                    border: '1px solid #475569', 
+                    borderRadius: '8px', 
+                    padding: '16px', 
+                    minWidth: '300px',
+                    zIndex: 20
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 style={{ color: '#e0e0e0', margin: 0 }}>Create New</h3>
+                        <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => setShowCreateForm(false)}
+                            style={{ padding: '4px' }}
+                        >
+                            <X size={16} />
+                        </Button>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                        <Button 
+                            size="sm"
+                            variant={createType === 'doctor' ? 'default' : 'outline'}
+                            onClick={() => setCreateType('doctor')}
+                        >
+                            Doctor
+                        </Button>
+                        <Button 
+                            size="sm"
+                            variant={createType === 'patient' ? 'default' : 'outline'}
+                            onClick={() => setCreateType('patient')}
+                        >
+                            Patient
+                        </Button>
+                    </div>
+                    
+                    {createType === 'doctor' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                    Name *
+                                </label>
+                                <Input
+                                    value={newDoctorName}
+                                    onChange={(e) => setNewDoctorName(e.target.value)}
+                                    placeholder="Enter doctor name"
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <Button onClick={createDoctor} disabled={!newDoctorName.trim()}>
+                                    Create Doctor
+                                </Button>
+                                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Name *
+                                    </label>
+                                    <Input
+                                        value={newPatientData.name}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Patient name"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Age
+                                    </label>
+                                    <Input
+                                        type="number"
+                                        value={newPatientData.age}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, age: e.target.value }))}
+                                        placeholder="Age"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Gender
+                                    </label>
+                                    <Input
+                                        value={newPatientData.gender}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, gender: e.target.value }))}
+                                        placeholder="Gender"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Blood Type
+                                    </label>
+                                    <Input
+                                        value={newPatientData.blood_type}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, blood_type: e.target.value }))}
+                                        placeholder="Blood type"
+                                    />
+                                </div>
+                                <div style={{ gridColumn: '1 / -1' }}>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Medical Condition
+                                    </label>
+                                    <Input
+                                        value={newPatientData.medical_condition}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, medical_condition: e.target.value }))}
+                                        placeholder="Medical condition"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Insurance Provider
+                                    </label>
+                                    <Input
+                                        value={newPatientData.insurance_provider}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, insurance_provider: e.target.value }))}
+                                        placeholder="Insurance provider"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                                        Room Number
+                                    </label>
+                                    <Input
+                                        value={newPatientData.room_number}
+                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, room_number: e.target.value }))}
+                                        placeholder="Room number"
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <Button onClick={createPatient} disabled={!newPatientData.name.trim()}>
+                                    Create Patient
+                                </Button>
+                                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
             <ForceGraph2D
                 ref={fgRef}
                 graphData={graphData}
@@ -1143,6 +1480,21 @@ const DataVisualization = () => {
                                     }
                                     return newSet;
                                 });
+                                return;
+                            }
+                        }
+
+                        // Check if clicked on delete button
+                        if (node.__deleteBounds && (nodeData.label?.toLowerCase() === 'doctor' || nodeData.label?.toLowerCase() === 'patient')) {
+                            const deleteBounds = node.__deleteBounds;
+                            const relX = graphCoords.x - node.x;
+                            const relY = graphCoords.y - node.y;
+
+                            if (relX >= deleteBounds.x && relX <= deleteBounds.x + deleteBounds.width &&
+                                relY >= deleteBounds.y && relY <= deleteBounds.y + deleteBounds.height) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                deleteNode(nodeData.id, nodeData.label || 'entity');
                                 return;
                             }
                         }
