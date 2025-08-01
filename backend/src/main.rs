@@ -78,7 +78,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let helix_db = Arc::new(HelixDB::new(Some("http://localhost"), Some(args.port)));
+    let helix_db = match args.source {
+        DataSource::Cloud => Arc::new(HelixDB::new(Some(&helix_url), None)),
+        _ => Arc::new(HelixDB::new(Some("http://localhost"), Some(args.port))),
+    };
 
     let app_state = AppState {
         helix_db: helix_db.clone(),
