@@ -37,6 +37,46 @@ interface Parameter {
     description: string;
 }
 
+const inferHttpMethod = (endpointName: string, originalMethod?: string): string => {
+    if (originalMethod && originalMethod !== 'GET') {
+        return originalMethod;
+    }
+
+    const name = endpointName.toLowerCase();
+
+    const methodPatterns = {
+        GET: [
+            /^get/, /^fetch/, /^retrieve/, /^find/, /^search/, /^list/, /^show/,
+            /^read/, /^view/, /^select/, /^query/, /^load/, /^check/
+        ],
+        POST: [
+            /^post/, /^create/, /^add/, /^insert/, /^new/, /^register/,
+            /^make/, /^build/, /^generate/, /^send/, /^submit/, /^save/
+        ],
+        PUT: [
+            /^put/, /^update/, /^modify/, /^change/, /^edit/, /^replace/,
+            /^set/, /^alter/, /^refresh/, /^sync/
+        ],
+        PATCH: [
+            /^patch/, /^partial/, /^increment/, /^decrement/, /^toggle/
+        ],
+        DELETE: [
+            /^delete/, /^remove/, /^destroy/, /^drop/, /^clear/,
+            /^purge/, /^erase/, /^cancel/, /^revoke/
+        ]
+    };
+
+    for (const [method, patterns] of Object.entries(methodPatterns)) {
+        for (const pattern of patterns) {
+            if (pattern.test(name)) {
+                return method;
+            }
+        }
+    }
+
+    return originalMethod || 'GET';
+}
+
 interface EndpointConfig {
     name: string;
     method: string;
@@ -168,7 +208,27 @@ export default function QueriesPage() {
         try {
             const dynamicEndpoints = await getEndpoints()
             if (Object.keys(dynamicEndpoints).length > 0) {
-                setEndpoints(dynamicEndpoints)
+                const processedEndpoints: Record<string, EndpointConfig> = {}
+                const inferredMethods: Record<string, string> = {}
+
+                Object.entries(dynamicEndpoints).forEach(([key, endpoint]) => {
+                    const inferredMethod = inferHttpMethod(endpoint.name, endpoint.method)
+                    processedEndpoints[key] = {
+                        ...endpoint,
+                        method: inferredMethod
+                    }
+
+                    if (inferredMethod !== endpoint.method) {
+                        inferredMethods[key] = inferredMethod
+                    }
+                })
+
+                setEndpoints(processedEndpoints)
+
+                setEndpointMethods(prev => ({
+                    ...prev,
+                    ...inferredMethods
+                }))
             } else {
                 // Show empty state if no endpoints are available
                 setEndpoints({})
@@ -406,12 +466,15 @@ export default function QueriesPage() {
         const endpoint = endpoints[endpointKey]
         const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
+        const inferredMethod = inferHttpMethod(endpoint.name, endpoint.method)
+        const finalMethod = endpointMethods[endpointKey] || inferredMethod
+
         return {
             id: tabId,
             endpointKey,
             name: endpoint.name,
             url: endpoint.url,
-            method: endpointMethods[endpointKey] || endpoint.method,
+            method: finalMethod,
             params: {},
             body: endpoint.body ? JSON.stringify(endpoint.body, null, 2) : "",
             response: "",
@@ -512,7 +575,10 @@ export default function QueriesPage() {
         const endpoint = endpoints[endpointKey]
         if (!endpoint) return
 
-        setMethod(endpointMethods[endpointKey] || endpoint.method)
+        const inferredMethod = inferHttpMethod(endpoint.name, endpoint.method)
+        const finalMethod = endpointMethods[endpointKey] || inferredMethod
+
+        setMethod(finalMethod)
         setUrl(endpoint.url)
         setParams({})
         setBody(endpoint.body ? JSON.stringify(endpoint.body, null, 2) : "")
