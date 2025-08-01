@@ -158,8 +158,17 @@ async fn execute_query_handler(
         }
         _ => serde_json::Map::new(),
     };
+
+    let param_types = get_query_param_types(&app_state, &query_name).await;
     for (key, value) in query_params {
-        params.insert(key, serde_json::Value::String(value));
+        if !params.contains_key(&key) {
+            let converted_value = if let Some(param_type) = param_types.get(&key) {
+                convert_string_to_type(&value, param_type)
+            } else {
+                serde_json::Value::String(value)
+            };
+            params.insert(key, converted_value);
+        }
     }
 
     let params_value = serde_json::Value::Object(params);
@@ -173,6 +182,92 @@ async fn execute_query_handler(
                 "query": query_name
             }))
         }
+    }
+}
+
+async fn get_query_param_types(
+    app_state: &AppState,
+    query_name: &str,
+) -> std::collections::HashMap<String, String> {
+    let mut param_types = std::collections::HashMap::new();
+
+    match fetch_cloud_introspect(&app_state.helix_url).await {
+        Ok(introspect_data) => {
+            for query in introspect_data.queries {
+                if query.name == query_name {
+                    if let serde_json::Value::Object(params) = query.parameters {
+                        for (param_name, param_type_val) in params {
+                            if let Some(param_type_str) = param_type_val.as_str() {
+                                param_types.insert(param_name, param_type_str.to_string());
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "Warning: Could not fetch introspect data for parameter types: {}",
+                e
+            );
+        }
+    }
+
+    param_types
+}
+
+fn convert_string_to_type(value: &str, param_type: &str) -> serde_json::Value {
+    match param_type {
+        "String" => serde_json::Value::String(value.to_string()),
+        "ID" => serde_json::Value::String(value.to_string()),
+        "I32" => match value.parse::<i32>() {
+            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
+            Err(_) => serde_json::Value::String(value.to_string()),
+        },
+        "I64" => match value.parse::<i64>() {
+            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
+            Err(_) => serde_json::Value::String(value.to_string()),
+        },
+        "F64" => match value.parse::<f64>() {
+            Ok(num) => serde_json::Value::Number(
+                serde_json::Number::from_f64(num).unwrap_or(serde_json::Number::from(0)),
+            ),
+            Err(_) => serde_json::Value::String(value.to_string()),
+        },
+        "Array(F64)" => {
+            if let Ok(parsed) = serde_json::from_str::<Vec<f64>>(value) {
+                return serde_json::Value::Array(
+                    parsed
+                        .into_iter()
+                        .map(|f| {
+                            serde_json::Value::Number(
+                                serde_json::Number::from_f64(f)
+                                    .unwrap_or(serde_json::Number::from(0)),
+                            )
+                        })
+                        .collect(),
+                );
+            }
+            let nums: Result<Vec<f64>, _> =
+                value.split(',').map(|s| s.trim().parse::<f64>()).collect();
+
+            match nums {
+                Ok(numbers) => serde_json::Value::Array(
+                    numbers
+                        .into_iter()
+                        .map(|f| {
+                            serde_json::Value::Number(
+                                serde_json::Number::from_f64(f)
+                                    .unwrap_or(serde_json::Number::from(0)),
+                            )
+                        })
+                        .collect(),
+                ),
+                Err(_) => serde_json::Value::String(value.to_string()),
+            }
+        }
+        _ => serde_json::Value::String(value.to_string()),
     }
 }
 

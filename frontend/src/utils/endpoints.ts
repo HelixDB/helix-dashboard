@@ -16,6 +16,7 @@ interface EndpointConfig {
     params: Array<{
         name: string;
         type: string;
+        param_type: string;
         required: boolean;
         description: string;
     }>;
@@ -44,6 +45,7 @@ function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
     const params = apiEndpoint.parameters.map(param => ({
         name: param.name,
         type: 'query',
+        param_type: param.param_type,
         required: true,
         description: generateParamDescription(param.name, param.param_type)
     }));
@@ -98,18 +100,67 @@ function generateParamDescription(paramName: string, paramType: string): string 
 }
 
 function getDefaultValueForType(paramType: string): any {
-    switch (paramType) {
-        case 'String':
+    const normalizedType = paramType.toLowerCase();
+
+    switch (normalizedType) {
+        case 'string':
+            return '';
+        case 'id':
             return '';
         case 'i32':
         case 'i64':
             return 0;
         case 'f64':
             return 0.0;
-        case 'Vec<f64>':
+        case 'vec<f64>':
+        case 'array(f64)':
             return [];
         default:
             return '';
+    }
+}
+
+export function convertParamValue(value: string, paramType: string): any {
+    if (!value.trim()) {
+        return getDefaultValueForType(paramType);
+    }
+
+    const normalizedType = paramType.toLowerCase();
+
+    switch (normalizedType) {
+        case 'string':
+            return value;
+        case 'id':
+            return value;
+        case 'i32':
+        case 'i64':
+            const intVal = parseInt(value, 10);
+            return isNaN(intVal) ? 0 : intVal;
+        case 'f64':
+            const floatVal = parseFloat(value);
+            return isNaN(floatVal) ? 0.0 : floatVal;
+        case 'vec<f64>':
+        case 'array(f64)':
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) {
+                    return parsed.map(v => {
+                        const num = parseFloat(v);
+                        return isNaN(num) ? 0.0 : num;
+                    });
+                }
+                return value.split(',').map(v => {
+                    const num = parseFloat(v.trim());
+                    return isNaN(num) ? 0.0 : num;
+                });
+            } catch {
+                return value.split(',').map(v => {
+                    const num = parseFloat(v.trim());
+                    return isNaN(num) ? 0.0 : num;
+                });
+            }
+        default:
+            return value;
     }
 }
 

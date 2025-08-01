@@ -25,11 +25,26 @@ import {
     SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Send, Copy, Download, ArrowLeft, Play, Search, Filter, X, Plus, Edit2, CheckSquare, Square, Users, SquarePen, Check, FileText, RefreshCw, ChevronDown, ChevronRight } from "lucide-react"
-import { getEndpoints, clearEndpointsCache } from "@/utils/endpoints"
+import { getEndpoints, clearEndpointsCache, convertParamValue } from "@/utils/endpoints"
 import { JsonTable } from "@/components/json-table"
 import { OptimizedJsonViewer } from "@/components/optimized-json-viewer"
 
+interface Parameter {
+    name: string;
+    type: string;
+    param_type: string;
+    required: boolean;
+    description: string;
+}
 
+interface EndpointConfig {
+    name: string;
+    method: string;
+    url: string;
+    description: string;
+    params: Parameter[];
+    body?: any;
+}
 
 // Response Panel component with proper scroll handling
 const ResponsePanel = ({ loading, response }: { loading: boolean; response: string }) => {
@@ -97,7 +112,7 @@ interface QueryTab {
     body: string
     response: string
     loading: boolean
-    status: number | null
+    status: number | string | null
 }
 
 export default function QueriesPage() {
@@ -106,7 +121,7 @@ export default function QueriesPage() {
     const selectedEndpoint = searchParams.get("endpoint")
 
     // Dynamic endpoints state
-    const [endpoints, setEndpoints] = useState<Record<string, any>>({})
+    const [endpoints, setEndpoints] = useState<Record<string, EndpointConfig>>({})
     const [endpointsLoading, setEndpointsLoading] = useState(true)
     const [endpointsError, setEndpointsError] = useState<string | null>(null)
 
@@ -121,7 +136,7 @@ export default function QueriesPage() {
     const [body, setBody] = useState("")
     const [response, setResponse] = useState("")
     const [loading, setLoading] = useState(false)
-    const [status, setStatus] = useState<number | null>(null)
+    const [status, setStatus] = useState<number | string | null>(null)
 
     // Search and filter states
     const [searchTerm, setSearchTerm] = useState("")
@@ -388,7 +403,7 @@ export default function QueriesPage() {
 
     // Create a new tab for a query
     const createTab = (endpointKey: string): QueryTab => {
-        const endpoint = endpoints[endpointKey as keyof typeof endpoints]
+        const endpoint = endpoints[endpointKey]
         const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
         return {
@@ -488,13 +503,13 @@ export default function QueriesPage() {
     }, [selectedEndpoint, searchParams, openTabs])
 
     useEffect(() => {
-        if (selectedEndpoint && endpoints[selectedEndpoint as keyof typeof endpoints] && !searchParams.get('tab')) {
+        if (selectedEndpoint && endpoints[selectedEndpoint] && !searchParams.get('tab')) {
             updateEndpoint(selectedEndpoint)
         }
     }, [selectedEndpoint])
 
     const updateEndpoint = (endpointKey: string) => {
-        const endpoint = endpoints[endpointKey as keyof typeof endpoints]
+        const endpoint = endpoints[endpointKey]
         if (!endpoint) return
 
         setMethod(endpointMethods[endpointKey] || endpoint.method)
@@ -531,20 +546,31 @@ export default function QueriesPage() {
             const newParams = { ...activeTab.params, [paramName]: value }
             updateTabState(activeTab.id, {
                 params: newParams,
-                body: syncParamsToBody(newParams, activeTab.body)
+                body: syncParamsToBody(newParams, activeTab.body, activeTab.endpointKey)
             })
         } else {
             const newParams = { ...params, [paramName]: value }
             setParams(newParams)
-            setBody(syncParamsToBody(newParams, body))
+            setBody(syncParamsToBody(newParams, body, selectedEndpoint || ''))
         }
     }
 
-    const syncParamsToBody = (currentParams: Record<string, string>, currentBody: string) => {
+    const syncParamsToBody = (currentParams: Record<string, string>, currentBody: string, endpointKey: string) => {
+        const endpoint = endpoints[endpointKey]
+        if (!endpoint) return currentBody
+
         if (!currentBody.trim()) {
             const nonEmptyParams = Object.entries(currentParams).filter(([_, value]) => value.trim() !== '')
             if (nonEmptyParams.length > 0) {
-                const paramsObject = Object.fromEntries(nonEmptyParams)
+                const paramsObject: Record<string, any> = {}
+                nonEmptyParams.forEach(([key, value]) => {
+                    const param = endpoint.params.find(p => p.name === key)
+                    if (param) {
+                        paramsObject[key] = convertParamValue(value, param.param_type)
+                    } else {
+                        paramsObject[key] = value
+                    }
+                })
                 return JSON.stringify(paramsObject, null, 2)
             }
             return currentBody
@@ -555,7 +581,12 @@ export default function QueriesPage() {
 
             Object.entries(currentParams).forEach(([key, value]) => {
                 if (value.trim() !== '') {
-                    bodyObj[key] = value
+                    const param = endpoint.params.find(p => p.name === key)
+                    if (param) {
+                        bodyObj[key] = convertParamValue(value, param.param_type)
+                    } else {
+                        bodyObj[key] = value
+                    }
                 } else {
                     delete bodyObj[key]
                 }
@@ -574,17 +605,17 @@ export default function QueriesPage() {
         const currentEndpointKey = tabData?.endpointKey || activeTab?.endpointKey || selectedEndpoint
 
         let finalUrl = currentUrl
-        const endpoint = endpoints[currentEndpointKey as keyof typeof endpoints]
+        const endpoint = endpoints[currentEndpointKey || '']
 
-        endpoint?.params?.forEach(param => {
+        endpoint?.params?.forEach((param: Parameter) => {
             if (param.type === "path") {
                 finalUrl = finalUrl.replace(`{${param.name}}`, currentParams[param.name] || `{${param.name}}`)
             }
         })
 
-        const queryParams = endpoint?.params?.filter(p => p.type === "query" && currentParams[p.name])
+        const queryParams = endpoint?.params?.filter((p: Parameter) => p.type === "query" && currentParams[p.name])
         if (queryParams && queryParams.length > 0) {
-            const queryString = queryParams.map(p => `${p.name}=${encodeURIComponent(currentParams[p.name])}`).join("&")
+            const queryString = queryParams.map((p: Parameter) => `${p.name}=${encodeURIComponent(currentParams[p.name])}`).join("&")
             finalUrl = finalUrl.includes("?") ? finalUrl.replace(/\{[^}]+\}/g, "") : finalUrl
             if (!finalUrl.includes("?")) finalUrl += "?"
             finalUrl += queryString
@@ -604,12 +635,12 @@ export default function QueriesPage() {
                 const finalUrl = buildUrl(activeTab)
                 const options: RequestInit = {
                     method: activeTab.method,
-                    headers: {},
+                    headers: {} as Record<string, string>,
                 }
 
                 // Only set Content-Type for requests that have a body
                 if (activeTab.method !== "GET" && activeTab.method !== "DELETE") {
-                    options.headers["Content-Type"] = "application/json"
+                    (options.headers as Record<string, string>)["Content-Type"] = "application/json"
                 }
 
                 if (activeTab.method !== "GET" && activeTab.method !== "DELETE" && activeTab.body.trim()) {
@@ -638,12 +669,12 @@ export default function QueriesPage() {
                 })
             } catch (error) {
                 let errorMessage = error instanceof Error ? error.message : "Unknown error"
-                let errorStatus = 0
+                let errorStatus: string | number = 0
 
                 // Check if it's a CORS/network error that might have status info
                 if (errorMessage.includes('Failed to fetch') || errorMessage.includes('CORS')) {
                     errorMessage = "CORS error - check if server allows cross-origin requests"
-                    errorStatus = "CORS Error" as any // Display as text instead of number
+                    errorStatus = "CORS Error"
                 }
 
                 updateTabState(activeTab.id, {
@@ -661,12 +692,12 @@ export default function QueriesPage() {
                 const finalUrl = buildUrl()
                 const options: RequestInit = {
                     method,
-                    headers: {},
+                    headers: {} as Record<string, string>,
                 }
 
                 // Only set Content-Type for requests that have a body
                 if (method !== "GET" && method !== "DELETE") {
-                    options.headers["Content-Type"] = "application/json"
+                    (options.headers as Record<string, string>)["Content-Type"] = "application/json"
                 }
 
                 if (method !== "GET" && method !== "DELETE" && body.trim()) {
@@ -1320,7 +1351,7 @@ export default function QueriesPage() {
                                 <div className="space-y-2">
                                     <Label>Parameters</Label>
                                     <div className="space-y-2">
-                                        {currentEndpoint.params.map((param) => (
+                                        {currentEndpoint.params.map((param: Parameter) => (
                                             <div key={param.name} className="grid grid-cols-[160px_1fr_60px_auto] gap-2 items-center">
                                                 <Label className="text-sm truncate" title={param.name}>{param.name}</Label>
                                                 <Input
@@ -1329,7 +1360,7 @@ export default function QueriesPage() {
                                                     onChange={(e) => handleParamChange(param.name, e.target.value)}
                                                 />
                                                 <span className="text-xs text-muted-foreground text-center">
-                                                    {param.type}
+                                                    {param.param_type}
                                                 </span>
                                                 <div className="w-4 flex justify-center">
                                                     {param.required && (
@@ -1385,7 +1416,7 @@ export default function QueriesPage() {
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium">Status:</span>
                                         <span
-                                            className={`px-2 py-1 rounded text-xs font-medium ${currentStatus === 0 || currentStatus === "CORS Error"
+                                            className={`px-2 py-1 rounded text-xs font-medium ${currentStatus === 0 || (typeof currentStatus === 'string' && currentStatus === "CORS Error")
                                                 ? "bg-[#C34043CC] text-white"
                                                 : typeof currentStatus === 'number' && currentStatus >= 200 && currentStatus < 300
                                                     ? "bg-[#76946A] text-white"
@@ -1396,7 +1427,7 @@ export default function QueriesPage() {
                                         >
                                             {currentStatus === 0
                                                 ? "Failed to fetch"
-                                                : currentStatus === "CORS Error"
+                                                : (typeof currentStatus === 'string' && currentStatus === "CORS Error")
                                                     ? "CORS Error"
                                                     : currentStatus}
                                         </span>
