@@ -229,6 +229,20 @@ fn convert_string_to_type(value: &str, param_type: &str) -> serde_json::Value {
             Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
             Err(_) => serde_json::Value::String(value.to_string()),
         },
+        "U32" => match value.parse::<u32>() {
+            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
+            Err(_) => serde_json::Value::Number(serde_json::Number::from(0)),
+        },
+        "U64" => match value.parse::<u64>() {
+            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
+            Err(_) => serde_json::Value::Number(serde_json::Number::from(0)),
+        },
+        "U128" => match value.parse::<u128>() {
+            Ok(num) => serde_json::Value::Number(
+                serde_json::Number::from_f64(num as f64).unwrap_or(serde_json::Number::from(0)),
+            ),
+            Err(_) => serde_json::Value::Number(serde_json::Number::from(0)),
+        },
         "F64" => match value.parse::<f64>() {
             Ok(num) => serde_json::Value::Number(
                 serde_json::Number::from_f64(num).unwrap_or(serde_json::Number::from(0)),

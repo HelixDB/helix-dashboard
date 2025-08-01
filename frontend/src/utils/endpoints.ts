@@ -109,6 +109,9 @@ function getDefaultValueForType(paramType: string): any {
             return '';
         case 'i32':
         case 'i64':
+        case 'u32':
+        case 'u64':
+        case 'u128':
             return 0;
         case 'f64':
             return 0.0;
@@ -134,6 +137,9 @@ export function convertParamValue(value: string, paramType: string): any {
             return value;
         case 'i32':
         case 'i64':
+        case 'u32':
+        case 'u64':
+        case 'u128':
             const intVal = parseInt(value, 10);
             return isNaN(intVal) ? 0 : intVal;
         case 'f64':
