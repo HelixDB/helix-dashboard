@@ -47,11 +47,11 @@ const data = {
             url: "/dashboard/schema",
             icon: Database,
         },
-        // {
-        //     name: "Visualization",
-        //     url: "/dashboard/visualization",
-        //     icon: Eye,
-        // },
+        {
+            name: "Visualization",
+            url: "/dashboard/visualize",
+            icon: Eye,
+        },
         // {
         //     name: "Analytics",
         //     url: "/dashboard/analytics",

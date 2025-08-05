@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::Json,
     routing::{delete, get, post, put},
 };
@@ -93,6 +93,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/query/{query_name}", post(execute_query_handler))
         .route("/api/query/{query_name}", put(execute_query_handler))
         .route("/api/query/{query_name}", delete(execute_query_handler))
+        .route("/nodes-edges", get(get_nodes_edges_handler))
+        .route("/nodes-by-label", get(get_nodes_by_label_handler))
+        .route("/node-details", get(get_node_details_handler))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -326,5 +329,164 @@ fn sort_json_object(value: Value) -> Value {
         }
         Value::Array(arr) => Value::Array(arr.into_iter().map(sort_json_object).collect()),
         other => other,
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct NodesEdgesQuery {
+    limit: Option<u32>,
+    node_label: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct NodeDetailsQuery {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct NodesByLabelQuery {
+    label: String,
+    limit: Option<u32>,
+}
+
+#[axum_macros::debug_handler]
+async fn get_nodes_edges_handler(
+    State(app_state): State<AppState>,
+    Query(params): Query<NodesEdgesQuery>,
+) -> Json<serde_json::Value> {
+    let mut url = format!("{}/nodes-edges", app_state.helix_url);
+    let mut query_params = vec![];
+
+    if let Some(limit) = params.limit {
+        let capped_limit = limit.min(300);
+        query_params.push(format!("limit={}", capped_limit));
+    }
+
+    if let Some(node_label) = params.node_label {
+        query_params.push(format!("node_label={}", node_label));
+    }
+
+    if !query_params.is_empty() {
+        url.push('?');
+        url.push_str(&query_params.join("&"));
+    }
+
+    match reqwest::get(&url).await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => Json(data),
+                    Err(e) => {
+                        eprintln!("Error parsing nodes-edges response: {}", e);
+                        Json(serde_json::json!({
+                            "error": format!("Failed to parse response: {}", e),
+                            "data": { "nodes": [], "edges": [], "vectors": [] }
+                        }))
+                    }
+                }
+            } else {
+                eprintln!("Error from HelixDB nodes-edges: {}", response.status());
+                Json(serde_json::json!({
+                    "error": format!("HelixDB error: {}", response.status()),
+                    "data": { "nodes": [], "edges": [], "vectors": [] }
+                }))
+            }
+        }
+        Err(e) => {
+            eprintln!("Error connecting to HelixDB nodes-edges: {}", e);
+            Json(serde_json::json!({
+                "error": format!("Connection error: {}", e),
+                "data": { "nodes": [], "edges": [], "vectors": [] }
+            }))
+        }
+    }
+}
+
+#[axum_macros::debug_handler]
+async fn get_node_details_handler(
+    State(app_state): State<AppState>,
+    Query(params): Query<NodeDetailsQuery>,
+) -> Json<serde_json::Value> {
+    let url = format!("{}/node-details?id={}", app_state.helix_url, params.id);
+
+    match reqwest::get(&url).await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => Json(data),
+                    Err(e) => {
+                        eprintln!("Error parsing node-details response: {}", e);
+                        Json(serde_json::json!({
+                            "error": format!("Failed to parse response: {}", e),
+                            "data": {}
+                        }))
+                    }
+                }
+            } else {
+                eprintln!("Error from HelixDB node-details: {}", response.status());
+                Json(serde_json::json!({
+                    "error": format!("HelixDB error: {}", response.status()),
+                    "data": {}
+                }))
+            }
+        }
+        Err(e) => {
+            eprintln!("Error connecting to HelixDB node-details: {}", e);
+            Json(serde_json::json!({
+                "error": format!("Connection error: {}", e),
+                "data": {}
+            }))
+        }
+    }
+}
+
+#[axum_macros::debug_handler]
+async fn get_nodes_by_label_handler(
+    State(app_state): State<AppState>,
+    Query(params): Query<NodesByLabelQuery>,
+) -> Json<serde_json::Value> {
+    let mut url = format!("{}/nodes-by-label", app_state.helix_url);
+    let mut query_params = vec![];
+
+    query_params.push(format!("label={}", params.label));
+
+    if let Some(limit) = params.limit {
+        let capped_limit = limit.min(300);
+        query_params.push(format!("limit={}", capped_limit));
+    }
+
+    if !query_params.is_empty() {
+        url.push('?');
+        url.push_str(&query_params.join("&"));
+    }
+
+    match reqwest::get(&url).await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => Json(data),
+                    Err(e) => {
+                        eprintln!("Error parsing nodes-by-label response: {}", e);
+                        Json(serde_json::json!({
+                            "error": format!("Failed to parse response: {}", e),
+                            "data": { "nodes": [], "edges": [], "vectors": [] }
+                        }))
+                    }
+                }
+            } else {
+                eprintln!("Error from HelixDB nodes-by-label: {}", response.status());
+                Json(serde_json::json!({
+                    "error": format!("HelixDB error: {}", response.status()),
+                    "data": { "nodes": [], "edges": [], "vectors": [] }
+                }))
+            }
+        }
+        Err(e) => {
+            eprintln!("Error connecting to HelixDB nodes-by-label: {}", e);
+            Json(serde_json::json!({
+                "error": format!("Connection error: {}", e),
+                "data": { "nodes": [], "edges": [], "vectors": [] }
+            }))
+        }
     }
 }

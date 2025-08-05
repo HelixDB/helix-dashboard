@@ -2,6 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { AppSidebar } from "@/components/app-sidebar"
+import {
+    SidebarInset,
+    SidebarProvider,
+    SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,7 +19,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Users, UserPlus, UserMinus } from 'lucide-react';
+import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Settings } from 'lucide-react';
 
 interface DataItem {
     id: string;
@@ -21,11 +28,32 @@ interface DataItem {
     [key: string]: any;
 }
 
-interface QueryOption {
-    value: string;
-    label: string;
-    method: string;
-    type: 'node' | 'edge' | 'vector';
+interface SchemaNode {
+    name: string;
+    properties: string[];
+}
+
+interface SchemaEdge {
+    name: string;
+    properties: string[];
+}
+
+interface SchemaInfo {
+    nodes: SchemaNode[];
+    edges: SchemaEdge[];
+}
+
+interface NodesEdgesResponse {
+    data: {
+        nodes: DataItem[];
+        edges: any[];
+        vectors: any[];
+    };
+    stats?: {
+        num_nodes: number;
+        num_edges: number;
+        num_vectors: number;
+    };
 }
 
 interface ApiResponse {
@@ -40,51 +68,31 @@ const DataVisualization = () => {
     const [edgeData, setEdgeData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [queries, setQueries] = useState<QueryOption[]>([]);
-    const [selectedQueries, setSelectedQueries] = useState<string[]>([]);
-    const [loadingQueries, setLoadingQueries] = useState(true);
+    const [schema, setSchema] = useState<SchemaInfo>({ nodes: [], edges: [] });
+    const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
+    const [selectedNodeLabel, setSelectedNodeLabel] = useState<string>('');
+    const [loadingSchema, setLoadingSchema] = useState(true);
+    const [showAllNodes, setShowAllNodes] = useState(false);
+    const [loadingNodeDetails, setLoadingNodeDetails] = useState(false);
+    const [loadingConnections, setLoadingConnections] = useState(false);
+    const [showConnections, setShowConnections] = useState(false);
+    const [, forceUpdate] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [topK, setTopK] = useState<number>(100);
     const [topKInput, setTopKInput] = useState<string>('100');
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-    const [selectedDoctorNode, setSelectedDoctorNode] = useState<DataItem | null>(null);
-    const [loadingPatients, setLoadingPatients] = useState(false);
     const hasZoomedRef = useRef(false);
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
     const isDraggingRef = useRef(false);
     const lastZoomRef = useRef<number>(1);
     const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const [isProgressiveMode, setIsProgressiveMode] = useState(false);
-    const [doctorList, setDoctorList] = useState<DataItem[]>([]);
-    const [currentDoctorIndex, setCurrentDoctorIndex] = useState(0);
-    const [totalDoctors, setTotalDoctors] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const capturedCenterRef = useRef<{ x: number; y: number } | null>(null);
     const capturedZoomRef = useRef<number | null>(null);
     const [capturedPositions, setCapturedPositions] = useState<Map<string, { x: number, y: number }>>(new Map());
     const [graphReady, setGraphReady] = useState(false);
-    const [loadDoctorsWithPatients, setLoadDoctorsWithPatients] = useState(false);
-    const [, forceUpdate] = useState({});
-    const [showCreateForm, setShowCreateForm] = useState(false);
-    const [createType, setCreateType] = useState<'doctor' | 'patient'>('doctor');
-    const [newDoctorName, setNewDoctorName] = useState('');
-    const [newPatientData, setNewPatientData] = useState({
-        name: '',
-        age: '',
-        gender: '',
-        blood_type: '',
-        medical_condition: '',
-        date_of_admission: '',
-        discharge_date: '',
-        insurance_provider: '',
-        billing_amount: '',
-        room_number: '',
-        admission_type: '',
-        medication: '',
-        test_results: ''
-    });
 
     // Simple zoom to fit when focused node changes
     useEffect(() => {
@@ -194,9 +202,7 @@ const DataVisualization = () => {
             const fontSize = 11;
             const headerFontSize = 14;
             const typeFontSize = 9;
-            const actionButtonHeight = hasSpecialAction ? 26 : 0;
-            const deleteButtonHeight = hasDeleteButton ? 26 : 0;
-            const buttonHeight = actionButtonHeight + deleteButtonHeight + (hasSpecialAction && hasDeleteButton ? 4 : 0);
+            const buttonHeight = 0;
 
             ctx.font = `${headerFontSize}px monospace bold`;
             let maxWidth = ctx.measureText(label).width;
@@ -212,7 +218,6 @@ const DataVisualization = () => {
             const fieldHeight = fontSize * 1.2;
             cardHeight = headerFontSize + padding * 2 + fields.length * fieldHeight + buttonHeight;
             if (allFields.length > 5) cardHeight += fieldHeight;
-            if (hasSpecialAction) cardHeight += padding;
         }
 
         // Set hit area based on render mode
@@ -251,7 +256,7 @@ const DataVisualization = () => {
             ctx.stroke();
 
             if (isHovered && renderMode === 'simple') {
-                const label = node.originalData.label || 'Entity';
+                const label = node.originalData.title || node.originalData.label || node.originalData.name || 'Entity';
                 ctx.font = '12px monospace';
                 ctx.fillStyle = '#ffffff';
                 ctx.fillText(label, node.x + size + 6, node.y + 4);
@@ -276,9 +281,7 @@ const DataVisualization = () => {
             const fontSize = 11;
             const headerFontSize = 14;
             const typeFontSize = 9;
-            const actionButtonHeight = hasSpecialAction ? 26 : 0;
-            const deleteButtonHeight = hasDeleteButton ? 26 : 0;
-            const buttonHeight = actionButtonHeight + deleteButtonHeight + (hasSpecialAction && hasDeleteButton ? 4 : 0);
+            const buttonHeight = 0;
 
             ctx.globalAlpha = detailOpacity;
 
@@ -359,76 +362,6 @@ const DataVisualization = () => {
                 yPos += fontSize * 1.2;
             }
 
-            // Button for nodes with special actions
-            if (hasSpecialAction) {
-                yPos += padding / 2;
-                const buttonWidth = cardWidth! - padding * 2;
-                const buttonX = node.x - buttonWidth / 2;
-                const buttonY = yPos;
-
-                const btnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + 22);
-                if (loadingPatients) {
-                    btnGradient.addColorStop(0, '#475569');
-                    btnGradient.addColorStop(1, '#334155');
-                } else {
-                    btnGradient.addColorStop(0, '#3b82f6');
-                    btnGradient.addColorStop(1, '#2563eb');
-                }
-                ctx.fillStyle = btnGradient;
-                ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
-
-                ctx.strokeStyle = loadingPatients ? '#64748b' : '#60a5fa';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
-
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'center';
-                ctx.font = `10px monospace`;
-
-                const buttonText = nodeType === 'doctor'
-                    ? (loadingPatients ? 'Loading...' : 'View Patients')
-                    : 'View Details';
-
-                ctx.fillText(buttonText, node.x, buttonY + 14);
-
-                node.__buttonBounds = {
-                    x: buttonX - node.x,
-                    y: buttonY - node.y,
-                    width: buttonWidth,
-                    height: 22
-                };
-                
-                yPos += 26;
-            }
-
-            if (hasDeleteButton) {
-                yPos += padding / 2;
-                const buttonWidth = cardWidth! - padding * 2;
-                const buttonX = node.x - buttonWidth / 2;
-                const buttonY = yPos;
-
-                const deleteBtnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + 22);
-                deleteBtnGradient.addColorStop(0, '#ef4444');
-                deleteBtnGradient.addColorStop(1, '#dc2626');
-                ctx.fillStyle = deleteBtnGradient;
-                ctx.fillRect(buttonX, buttonY, buttonWidth, 22);
-
-                ctx.strokeStyle = '#f87171';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(buttonX, buttonY, buttonWidth, 22);
-
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'center';
-                ctx.font = `10px monospace`;
-                ctx.fillText('Delete', node.x, buttonY + 14);
-
-                node.__deleteBounds = {
-                    x: buttonX - node.x,
-                    y: buttonY - node.y,
-                    width: buttonWidth,
-                    height: 22
-                };
-            }
 
             ctx.globalAlpha = originalAlpha;
         }
@@ -436,10 +369,6 @@ const DataVisualization = () => {
 
     // Compute graph data from state
     const graphData = useMemo(() => {
-        console.log('Computing graph data from state:', {
-            allNodesSize: allNodes.size,
-            edgeDataLength: edgeData.length
-        });
 
         const allNodesList = Array.from(allNodes.values()).map((item, index) => {
             // Create a hash from the node ID for consistent positioning
@@ -485,13 +414,11 @@ const DataVisualization = () => {
                 isVirtual: false
             }));
 
-        console.log('Computed graph data:', { nodesCount: nodes.length, linksCount: links.length });
         return { nodes, links };
     }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
 
     // Function to compute and update graph data
     const updateGraph = useCallback(() => {
-        console.log('updateGraph called - checking refs...');
         if (!fgRef.current) {
             console.warn('fgRef.current is null');
             return;
@@ -504,18 +431,11 @@ const DataVisualization = () => {
         // Check if graphData method exists
         if (typeof fgRef.current.graphData !== 'function') {
             console.warn('ForceGraph not yet initialized - graphData is not a function');
-            console.log('fgRef.current methods:', Object.getOwnPropertyNames(fgRef.current));
             return;
         }
 
-        console.log('updateGraph called with:', {
-            allNodesSize: allNodes.size,
-            edgeDataLength: edgeData.length,
-            focusedNodeId
-        });
 
         const currentGraph = fgRef.current.graphData();
-        console.log('Current graph data:', currentGraph);
         const existingNodeIds = new Set(currentGraph.nodes.map((n: any) => n.id));
 
         const { clientWidth: width, clientHeight: height } = containerRef.current;
@@ -525,7 +445,6 @@ const DataVisualization = () => {
         // Check if screen2GraphCoords method exists
         if (typeof fgRef.current.screen2GraphCoords !== 'function') {
             console.warn('ForceGraph screen2GraphCoords not available');
-            console.log('Available methods:', Object.getOwnPropertyNames(fgRef.current));
             return;
         }
 
@@ -566,40 +485,18 @@ const DataVisualization = () => {
                 isVirtual: false
             }));
 
-        console.log('Setting new graph data:', { nodesCount: nodes.length, linksCount: links.length });
-        console.log('Sample nodes:', nodes.slice(0, 3));
-        console.log('Sample links:', links.slice(0, 3));
 
         fgRef.current.graphData({ nodes, links });
     }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
 
-    // Add after the updateGraph definition
-    const toggleQuery = (queryValue: string) => {
-        setSelectedQueries(prev =>
-            prev.includes(queryValue)
-                ? prev.filter(q => q !== queryValue)
-                : [...prev, queryValue]
+    const toggleNodeType = (nodeType: string) => {
+        setSelectedNodeTypes(prev =>
+            prev.includes(nodeType)
+                ? prev.filter(t => t !== nodeType)
+                : [...prev, nodeType]
         );
     };
 
-    // Update graph when focused changes or when graph becomes ready
-    useEffect(() => {
-        if (graphReady) {
-            updateGraph();
-        }
-    }, [focusedNodeId, graphReady, updateGraph]);
-
-    // Update graph when data changes and graph is ready
-    useEffect(() => {
-        console.log('Data changed effect triggered:', {
-            allNodesSize: allNodes.size,
-            edgeDataLength: edgeData.length,
-            graphReady
-        });
-        if (graphReady) {
-            updateGraph();
-        }
-    }, [allNodes, edgeData, graphReady, updateGraph]);
 
     // Configure force simulation
     useEffect(() => {
@@ -611,7 +508,7 @@ const DataVisualization = () => {
             fgRef.current.d3Force('center').strength(0.02);
 
             // Zoom to fit if this is the first load
-            if (!hasZoomedRef.current && !isProgressiveMode) {
+            if (!hasZoomedRef.current) {
                 fgRef.current.zoomToFit(400, 300);
                 hasZoomedRef.current = true;
             }
@@ -627,969 +524,489 @@ const DataVisualization = () => {
                 }
             }, 2000);
         }
-    }, [focusedNodeId, isProgressiveMode]);
+    }, [focusedNodeId]);
 
-    // Modify executeQueries to use refs and updateGraph
-    const executeQueries = async () => {
-        if (selectedQueries.length === 0) return;
-
+    const loadNodes = async () => {
         setLoading(true);
         setError(null);
         setFocusedNodeId(null);
-        setSelectedDoctorNode(null);
+        setShowConnections(false);
 
         try {
-            const promises = selectedQueries.map(async (queryName) => {
-                const queryOption = queries.find(q => q.value === queryName);
-                if (!queryOption) return null;
+            let url: string;
+            const params = [];
 
-                const response = await fetch(`http://127.0.0.1:8080/api/query/${queryName}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error for ${queryName}! status: ${response.status}`);
+            if (selectedNodeLabel) {
+                url = 'http://127.0.0.1:8080/nodes-by-label';
+                params.push(`label=${encodeURIComponent(selectedNodeLabel)}`);
+                if (!showAllNodes) {
+                    params.push(`limit=${topK}`);
                 }
+            } else {
+                url = 'http://127.0.0.1:8080/nodes-edges';
+                if (!showAllNodes) {
+                    params.push(`limit=${topK}`);
+                }
+            }
 
-                const data: ApiResponse = await response.json();
-                return { queryOption, data };
-            });
+            if (params.length > 0) {
+                url += '?' + params.join('&');
+            }
 
-            const results = await Promise.all(promises);
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result: NodesEdgesResponse = await response.json();
+
+            if (result.error) {
+                throw new Error(result.error);
+            }
 
             const newNodes = new Map();
-            const newEdges: any[] = [];
 
-            results.forEach((result) => {
-                if (!result) return;
+            const nodes = result.data?.nodes || result.nodes || [];
+            if (nodes && nodes.length > 0) {
+                nodes.forEach(node => {
+                    newNodes.set(node.id, node);
+                });
+            }
 
-                const { queryOption, data } = result;
-
-                let dataArray: DataItem[] = [];
-                for (const key in data) {
-                    if (Array.isArray(data[key])) {
-                        dataArray = data[key];
-                        break;
-                    }
-                }
-                if (dataArray.length === 0 && Array.isArray(data)) {
-                    dataArray = data;
-                }
-
-                const limitedData = dataArray.slice(0, topK);
-
-                if (queryOption.value === 'getAllDoctors') {
-                    if (loadDoctorsWithPatients) {
-                        setDoctorList(limitedData);
-                        setCurrentDoctorIndex(0);
-                        setIsProgressiveMode(true);
-                        setTotalDoctors(limitedData.length);
-                    } else {
-                        limitedData.forEach(item => {
-                            newNodes.set(item.id, { ...item, label: 'Doctor' });
-                        });
-                    }
-                } else if (queryOption.type === 'edge') {
-                    newEdges.push(...limitedData);
-                } else {
-                    limitedData.forEach(item => {
-                        newNodes.set(item.id, item);
-                    });
-                }
-            });
-
-            console.log('executeQueries setting data:', {
-                newNodesSize: newNodes.size,
-                newEdgesLength: newEdges.length,
-                graphReady
-            });
 
             setAllNodes(newNodes);
-            setEdgeData(newEdges);
-            if (graphReady) {
-                updateGraph();
-            }
+            setEdgeData([]);
+
         } catch (error) {
-            console.error('Failed to execute queries:', error);
-            setError(error instanceof Error ? error.message : 'Failed to execute queries');
+            console.error('Failed to load nodes:', error);
+            setError(error instanceof Error ? error.message : 'Failed to load nodes');
         } finally {
             setLoading(false);
         }
     };
 
+    const loadConnections = async () => {
+        if (allNodes.size === 0) {
+            setError('No nodes loaded to fetch connections for');
+            return;
+        }
 
+        setLoadingConnections(true);
+        setError(null);
 
-    const fetchQueries = async () => {
         try {
-            const response = await fetch('http://127.0.0.1:8080/api/endpoints');
-            const data = await response.json();
+            let url = 'http://127.0.0.1:8080/nodes-edges';
+            if (!showAllNodes) {
+                url += `?limit=${Math.max(topK * 10, 1000)}`;
+            }
 
-            const queryOptions: QueryOption[] = data.map((endpoint: any) => {
-                let type: 'node' | 'edge' | 'vector' = 'node';
-                if (endpoint.query_name.toLowerCase().includes('edge') ||
-                    endpoint.query_name.toLowerCase().includes('assign') ||
-                    endpoint.query_name.toLowerCase().includes('link') ||
-                    endpoint.query_name.toLowerCase().includes('referral')) {
-                    type = 'edge';
-                } else if (endpoint.query_name.toLowerCase().includes('vector') ||
-                    endpoint.query_name.toLowerCase().includes('note')) {
-                    type = 'vector';
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result: NodesEdgesResponse = await response.json();
+
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            const nodeIds = new Set(Array.from(allNodes.keys()));
+            const newEdges: any[] = [];
+            const connectedNodes = new Map(allNodes);
+
+            result.data.edges.forEach(edge => {
+                const hasFromNode = nodeIds.has(edge.from);
+                const hasToNode = nodeIds.has(edge.to);
+
+                if (hasFromNode || hasToNode) {
+                    newEdges.push({
+                        from_node: edge.from,
+                        to_node: edge.to,
+                        label: edge.title || 'Edge',
+                        id: edge.id
+                    });
+
+                    if (!hasFromNode) {
+                        const fromNode = result.data.nodes.find(n => n.id === edge.from);
+                        if (fromNode) {
+                            connectedNodes.set(fromNode.id, fromNode);
+                        }
+                    }
+                    if (!hasToNode) {
+                        const toNode = result.data.nodes.find(n => n.id === edge.to);
+                        if (toNode) {
+                            connectedNodes.set(toNode.id, toNode);
+                        }
+                    }
                 }
-                return {
-                    value: endpoint.query_name,
-                    label: endpoint.query_name
-                        .replace(/([A-Z])/g, ' $1')
-                        .replace(/^./, (str: string) => str.toUpperCase())
-                        .trim(),
-                    method: endpoint.method,
-                    type
-                };
             });
 
-            setQueries(queryOptions);
-            setLoadingQueries(false);
+
+            setAllNodes(connectedNodes);
+            setEdgeData(newEdges);
+            setShowConnections(true);
+
         } catch (error) {
-            console.error('Failed to fetch queries:', error);
-            setLoadingQueries(false);
+            console.error('Failed to load connections:', error);
+            setError(error instanceof Error ? error.message : 'Failed to load connections');
+        } finally {
+            setLoadingConnections(false);
         }
     };
 
-    useEffect(() => {
-        fetchQueries();
-    }, []);
 
-    // Load all doctors and their patients at once
-    const handleLoadAllDoctors = async () => {
-        if (doctorList.length === 0) return;
 
-        setLoading(true);
+    const fetchSchema = async () => {
         try {
-            console.log('Loading all doctors and patients...');
+            const response = await fetch('http://127.0.0.1:8080/api/schema');
+            const data: SchemaInfo = await response.json();
+            setSchema(data);
+            setLoadingSchema(false);
+        } catch (error) {
+            console.error('Failed to fetch schema:', error);
+            setLoadingSchema(false);
+        }
+    };
 
-            const allNewNodes = new Map(allNodes);
-            const allNewEdges = [...edgeData];
+    const fetchNodeDetails = async () => {
+        if (allNodes.size === 0) {
+            setError('No nodes loaded to fetch details for');
+            return;
+        }
 
-            // Process doctors in batches to avoid overwhelming the API
-            const batchSize = 5;
-            for (let i = 0; i < doctorList.length; i += batchSize) {
-                const batch = doctorList.slice(i, i + batchSize);
-                console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(doctorList.length / batchSize)}`);
+        setLoadingNodeDetails(true);
+        setError(null);
 
-                const batchPromises = batch.map(async (doctor) => {
+        try {
+            const nodeIds = Array.from(allNodes.keys());
+
+            const batchSize = 10;
+            const updatedNodes = new Map(allNodes);
+
+            for (let i = 0; i < nodeIds.length; i += batchSize) {
+                const batch = nodeIds.slice(i, i + batchSize);
+
+                const batchPromises = batch.map(async (nodeId) => {
                     try {
-                        const { patients, edges } = await loadDoctorPatients(doctor.id);
-                        return { doctor, patients, edges };
+                        const response = await fetch(`http://127.0.0.1:8080/node-details?id=${encodeURIComponent(nodeId)}`);
+                        if (!response.ok) {
+                            console.warn(`Failed to fetch details for node ${nodeId}: ${response.status}`);
+                            return null;
+                        }
+                        const details = await response.json();
+                        return { nodeId, details };
                     } catch (error) {
-                        console.error(`Failed to load patients for doctor ${doctor.id}:`, error);
-                        return { doctor, patients: [], edges: [] };
+                        console.warn(`Error fetching details for node ${nodeId}:`, error);
+                        return null;
                     }
                 });
 
                 const batchResults = await Promise.all(batchPromises);
 
-                batchResults.forEach(({ doctor, patients, edges }) => {
-                    allNewNodes.set(doctor.id, { ...doctor, label: 'Doctor' });
-                    patients.forEach(p => allNewNodes.set(p.id, p));
-                    allNewEdges.push(...edges);
+                batchResults.forEach((result) => {
+                    if (result && result.details) {
+                        const existingNode = updatedNodes.get(result.nodeId);
+                        if (existingNode) {
+
+                            let nodeData = null;
+
+                            if (result.details.found && result.details.node) {
+                                nodeData = result.details.node;
+                            }
+                            else if (result.details.data) {
+                                nodeData = result.details.data;
+                            }
+                            else {
+                                nodeData = result.details;
+                            }
+
+                            if (nodeData && typeof nodeData === 'object') {
+
+                                updatedNodes.set(result.nodeId, {
+                                    ...existingNode,
+                                    ...nodeData,
+                                    id: result.nodeId,
+                                    title: nodeData.name || nodeData.title || nodeData.label || existingNode.title || result.nodeId
+                                });
+                            }
+                        }
+                    }
                 });
             }
 
-            console.log('Setting all data:', {
-                newNodesSize: allNewNodes.size,
-                newEdgesLength: allNewEdges.length
-            });
+            setAllNodes(updatedNodes);
 
-            setAllNodes(allNewNodes);
-            setEdgeData(allNewEdges);
-            setCurrentDoctorIndex(doctorList.length);
 
-        } catch (err) {
-            console.error('Failed to load all doctors:', err);
-            setError('Failed to load all doctors');
+            forceUpdate({});
+
+        } catch (error) {
+            console.error('Failed to fetch node details:', error);
+            setError(error instanceof Error ? error.message : 'Failed to fetch node details');
         } finally {
-            setLoading(false);
+            setLoadingNodeDetails(false);
         }
     };
 
-    const handleLoadNextDoctor = async () => {
-        if (currentDoctorIndex >= totalDoctors) return;
+    useEffect(() => {
+        fetchSchema();
+    }, []);
 
-        setLoading(true);
-        try {
-            const doctor = doctorList[currentDoctorIndex];
-            console.log('Loading patients for doctor:', doctor);
-
-            const { patients, edges } = await loadDoctorPatients(doctor.id);
-            console.log('Loaded patients and edges:', { patientsCount: patients.length, edgesCount: edges.length });
-
-            const newNodes = new Map(allNodes);
-            newNodes.set(doctor.id, { ...doctor, label: 'Doctor' });
-            patients.forEach(p => newNodes.set(p.id, p));
-
-            const newEdges = [...edgeData, ...edges];
-
-            console.log('Setting new data:', {
-                newNodesSize: newNodes.size,
-                newEdgesLength: newEdges.length
-            });
-
-            setAllNodes(newNodes);
-            setEdgeData(newEdges);
-
-            setCurrentDoctorIndex(prev => prev + 1);
-        } catch (err) {
-            console.error('Failed to load doctor patients:', err);
-            setError('Failed to load doctor patients');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const clearGraph = () => {
-        setSelectedQueries([]);
-        setIsProgressiveMode(false);
-        setDoctorList([]);
-        setCurrentDoctorIndex(0);
-        setTotalDoctors(0);
-        setLoadDoctorsWithPatients(false);
+        setSelectedNodeTypes([]);
+        setSelectedNodeLabel('');
+        setShowAllNodes(false);
+        setShowConnections(false);
         setAllNodes(new Map());
         setEdgeData([]);
-        updateGraph();
+        setFocusedNodeId(null);
     };
 
-    const fetchConnectedNodes = async (doctorId: string) => {
-        setLoadingPatients(true);
-        try {
-            const response = await fetch(`http://127.0.0.1:8080/api/query/getDoctorTreatsPatientEdgesByDoctor?doctor_id=${doctorId}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
 
-            const data: ApiResponse = await response.json();
-            let edgesArray: any[] = [];
-            for (const key in data) {
-                if (Array.isArray(data[key])) {
-                    edgesArray = data[key];
-                    break;
-                }
-            }
-
-            const patientIds = [...new Set(edgesArray.map(edge => edge.to_node))];
-
-            const patientPromises = patientIds.map(async (patientId) => {
-                try {
-                    const patientResponse = await fetch(`http://127.0.0.1:8080/api/query/getPatient?patient_id=${patientId}`);
-                    if (!patientResponse.ok) {
-                        console.error(`Failed to fetch patient ${patientId}`);
-                        return null;
-                    }
-                    const patientData = await patientResponse.json();
-
-                    let patient = null;
-                    for (const key in patientData) {
-                        if (Array.isArray(patientData[key]) && patientData[key].length > 0) {
-                            patient = patientData[key][0];
-                            break;
-                        } else if (typeof patientData[key] === 'object' && patientData[key].id === patientId) {
-                            patient = patientData[key];
-                            break;
-                        }
-                    }
-
-                    if (patient) {
-                        return {
-                            ...patient,
-                            id: patientId,
-                            label: 'Patient'
-                        };
-                    }
-                    return null;
-                } catch (error) {
-                    console.error(`Error fetching patient ${patientId}:`, error);
-                    return null;
-                }
-            });
-
-            const patientResults = await Promise.all(patientPromises);
-            const patientNodes = patientResults.filter(p => p !== null) as DataItem[];
-
-            const newNodes = new Map(allNodes);
-            patientNodes.forEach(patient => {
-                newNodes.set(patient.id, patient);
-            });
-
-            const newEdges = [...edgeData, ...edgesArray];
-
-            setAllNodes(newNodes);
-            setEdgeData(newEdges);
-
-        } catch (error) {
-            console.error('Failed to fetch connected nodes:', error);
-            setError(error instanceof Error ? error.message : 'Failed to fetch connected nodes');
-        } finally {
-            setLoadingPatients(false);
-        }
-    };
-
-    async function loadDoctorPatients(doctorId: string): Promise<{ patients: DataItem[]; edges: any[] }> {
-        try {
-            const response = await fetch(`http://127.0.0.1:8080/api/query/getDoctorTreatsPatientEdgesByDoctor?doctor_id=${doctorId}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data: ApiResponse = await response.json();
-            let edgesArray: any[] = [];
-            for (const key in data) {
-                if (Array.isArray(data[key])) {
-                    edgesArray = data[key];
-                    break;
-                }
-            }
-
-            // Get unique patient IDs but preserve all edges
-            const patientIds = [...new Set(edgesArray.map(edge => edge.to_node))];
-
-            const patientPromises = patientIds.map(async (patientId) => {
-                try {
-                    const patientResponse = await fetch(`http://127.0.0.1:8080/api/query/getPatient?patient_id=${patientId}`);
-                    if (!patientResponse.ok) {
-                        return null;
-                    }
-                    const patientData = await patientResponse.json();
-                    let patient = null;
-                    for (const key in patientData) {
-                        if (Array.isArray(patientData[key]) && patientData[key].length > 0) {
-                            patient = patientData[key][0];
-                            break;
-                        } else if (typeof patientData[key] === 'object' && patientData[key].id === patientId) {
-                            patient = patientData[key];
-                            break;
-                        }
-                    }
-                    if (patient) {
-                        return {
-                            ...patient,
-                            id: patientId,
-                            label: 'Patient'
-                        };
-                    }
-                    return null;
-                } catch (error) {
-                    return null;
-                }
-            });
-            const patientResults = await Promise.all(patientPromises);
-            const patients = patientResults.filter(p => p !== null) as DataItem[];
-
-            return { patients, edges: edgesArray };
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    // Add onEngineStop to ForceGraph2D
-    useEffect(() => {
-        if (fgRef.current) {
-            fgRef.current.d3Force('charge').strength(-1500);
-            fgRef.current.d3Force('link')
-                .distance(80)
-                .strength(0.6);
-            fgRef.current.d3Force('center').strength(0.02);
-
-            if (!hasZoomedRef.current && !isProgressiveMode) {
-                fgRef.current.zoomToFit(400, 300);
-                hasZoomedRef.current = true;
-            }
-
-            setTimeout(() => {
-                if (fgRef.current) {
-                    fgRef.current.d3Force('charge').strength(-800);
-                    fgRef.current.d3Force('link')
-                        .distance(100)
-                        .strength(0.4);
-                    fgRef.current.d3Force('center').strength(0.005);
-                }
-            }, 5000);
-        }
-    }, [focusedNodeId, isProgressiveMode]);
 
     const wasFocusedRef = useRef(false);
 
-    const createDoctor = async () => {
-        if (!newDoctorName.trim()) return;
-        
-        try {
-            const response = await fetch('http://127.0.0.1:8080/api/query/createDoctor', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: newDoctorName.trim() })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log('Doctor created:', result);
-            
-            // Add the new doctor to the graph
-            if (result.doctor) {
-                const newNodes = new Map(allNodes);
-                newNodes.set(result.doctor.id, { ...result.doctor, label: 'Doctor' });
-                setAllNodes(newNodes);
-            }
-            
-            // Reset form
-            setNewDoctorName('');
-            setShowCreateForm(false);
-        } catch (error) {
-            console.error('Failed to create doctor:', error);
-            setError('Failed to create doctor');
-        }
-    };
-
-    const createPatient = async () => {
-        if (!newPatientData.name.trim()) return;
-        
-        try {
-            const patientPayload = {
-                name: newPatientData.name.trim(),
-                age: parseInt(newPatientData.age) || 0,
-                gender: newPatientData.gender || '',
-                blood_type: newPatientData.blood_type || '',
-                medical_condition: newPatientData.medical_condition || '',
-                date_of_admission: newPatientData.date_of_admission || '',
-                discharge_date: newPatientData.discharge_date || '',
-                insurance_provider: newPatientData.insurance_provider || '',
-                billing_amount: parseFloat(newPatientData.billing_amount) || 0.0,
-                room_number: newPatientData.room_number || '',
-                admission_type: newPatientData.admission_type || '',
-                medication: newPatientData.medication || '',
-                test_results: newPatientData.test_results || ''
-            };
-            
-            const response = await fetch('http://127.0.0.1:8080/api/query/createPatient', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(patientPayload)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log('Patient created:', result);
-            
-            // Add the new patient to the graph
-            if (result.patient) {
-                const newNodes = new Map(allNodes);
-                newNodes.set(result.patient.id, { ...result.patient, label: 'Patient' });
-                setAllNodes(newNodes);
-            }
-            
-            // Reset form
-            setNewPatientData({
-                name: '',
-                age: '',
-                gender: '',
-                blood_type: '',
-                medical_condition: '',
-                date_of_admission: '',
-                discharge_date: '',
-                insurance_provider: '',
-                billing_amount: '',
-                room_number: '',
-                admission_type: '',
-                medication: '',
-                test_results: ''
-            });
-            setShowCreateForm(false);
-        } catch (error) {
-            console.error('Failed to create patient:', error);
-            setError('Failed to create patient');
-        }
-    };
-
-    const deleteNode = async (nodeId: string, nodeType: string) => {
-        try {
-            const queryName = nodeType.toLowerCase() === 'doctor' ? 'deleteDoctor' : 'deletePatient';
-            const paramName = nodeType.toLowerCase() === 'doctor' ? 'doctor_id' : 'patient_id';
-            
-            const response = await fetch(`http://127.0.0.1:8080/api/query/${queryName}?${paramName}=${nodeId}`, {
-                method: 'DELETE'
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const newNodes = new Map(allNodes);
-            newNodes.delete(nodeId);
-            setAllNodes(newNodes);
-            
-            const newEdges = edgeData.filter(edge => 
-                edge.from_node !== nodeId && edge.to_node !== nodeId
-            );
-            setEdgeData(newEdges);
-            
-            console.log(`${nodeType} deleted successfully`);
-        } catch (error) {
-            console.error(`Failed to delete ${nodeType}:`, error);
-            setError(`Failed to delete ${nodeType}`);
-        }
-    };
 
 
     return (
-        <div style={{ position: 'relative', height: '100vh', width: '100%' }} ref={containerRef}>
-            <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: 10 }}>
-                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
-                            {selectedQueries.length === 0 ? (loadingQueries ? 'Loading...' : 'Select queries') : `${selectedQueries.length} selected`}
-                            <ChevronDown size={16} />
+        <SidebarProvider>
+            <AppSidebar />
+            <SidebarInset className="overflow-hidden">
+                <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }} ref={containerRef}>
+                    <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <SidebarTrigger className="glass-hover rounded-lg p-2" />
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline">
+                                    {selectedNodeLabel || 'Select Node Type'}
+                                    <ChevronDown size={16} />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent style={{ width: 200, maxHeight: 300, overflowY: 'auto' }}>
+                                <DropdownMenuLabel>Node Types</DropdownMenuLabel>
+                                <DropdownMenuCheckboxItem
+                                    checked={selectedNodeLabel === ''}
+                                    onCheckedChange={() => setSelectedNodeLabel('')}
+                                >
+                                    All Types
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuSeparator />
+                                {schema.nodes.map(node => (
+                                    <DropdownMenuCheckboxItem
+                                        key={node.name}
+                                        checked={selectedNodeLabel === node.name}
+                                        onCheckedChange={() => setSelectedNodeLabel(node.name)}
+                                    >
+                                        {node.name}
+                                    </DropdownMenuCheckboxItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <Button onClick={loadNodes} disabled={loading}>
+                            {loading ? 'Loading...' : (<><Plus size={16} /> Load Nodes</>)}
                         </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent style={{ width: 300, maxHeight: 400, overflowY: 'auto' }}>
-                        <DropdownMenuLabel>Select queries</DropdownMenuLabel>
-                        <div style={{ padding: '0 8px' }}>
-                            <Input
-                                placeholder="Search..."
-                                value={searchTerm}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                                onKeyDown={(e) => {
-                                    e.stopPropagation();
-                                }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                }}
-                            />
-                        </div>
-                        <DropdownMenuSeparator />
-                        {/* Node, Edge, Vector sections similar to existing */}
-                        <DropdownMenuLabel>Node Operations</DropdownMenuLabel>
-                        {queries.filter(q => q.type === 'node' && q.label.toLowerCase().includes(searchTerm.toLowerCase())).map(q => (
-                            <DropdownMenuCheckboxItem
-                                key={q.value}
-                                checked={selectedQueries.includes(q.value)}
-                                onCheckedChange={() => toggleQuery(q.value)}
-                                onSelect={(e) => e.preventDefault()}
-                            >
-                                {q.label}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel>Edge Operations</DropdownMenuLabel>
-                        {queries.filter(q => q.type === 'edge' && q.label.toLowerCase().includes(searchTerm.toLowerCase())).map(q => (
-                            <DropdownMenuCheckboxItem
-                                key={q.value}
-                                checked={selectedQueries.includes(q.value)}
-                                onCheckedChange={() => toggleQuery(q.value)}
-                                onSelect={(e) => e.preventDefault()}
-                            >
-                                {q.label}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel>Vector Operations</DropdownMenuLabel>
-                        {queries.filter(q => q.type === 'vector' && q.label.toLowerCase().includes(searchTerm.toLowerCase())).map(q => (
-                            <DropdownMenuCheckboxItem
-                                key={q.value}
-                                checked={selectedQueries.includes(q.value)}
-                                onCheckedChange={() => toggleQuery(q.value)}
-                                onSelect={(e) => e.preventDefault()}
-                            >
-                                {q.label}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <Button onClick={executeQueries} disabled={selectedQueries.length === 0 || loading}>
-                    {loading ? 'Loading...' : (<><Plus size={16} /> Add to Graph</>)}
-                </Button>
-                <Button onClick={clearGraph}>
-                    <RotateCcw size={16} /> Clear
-                </Button>
-                <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-                    <UserPlus size={16} /> Create
-                </Button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Top K:</label>
-                    <Input
-                        type="text"
-                        value={topKInput}
-                        onChange={(e) => {
-                            setTopKInput(e.target.value);
-                        }}
-                        onBlur={() => {
-                            const num = Number(topKInput);
-                            if (!isNaN(num) && num > 0) {
-                                setTopK(num);
-                            } else {
-                                setTopKInput('100');
-                                setTopK(100);
-                            }
-                        }}
-                        style={{ width: '80px' }}
-                    />
-                </div>
-                {selectedQueries.includes('getAllDoctors') && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Mode:</label>
-                        <Button
-                            variant={loadDoctorsWithPatients ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setLoadDoctorsWithPatients(!loadDoctorsWithPatients)}
-                            style={{ fontSize: '12px', padding: '4px 8px' }}
-                        >
-                            {loadDoctorsWithPatients ? 'With Patients' : 'Doctors Only'}
+
+                        <Button onClick={clearGraph}>
+                            <RotateCcw size={16} /> Clear
                         </Button>
-                    </div>
-                )}
-                {isProgressiveMode && (
-                    <>
+
                         <Button
-                            onClick={handleLoadNextDoctor}
-                            disabled={currentDoctorIndex >= totalDoctors || loading}
-                        >
-                            {loading ? 'Loading...' : `Next Pair (${currentDoctorIndex} / ${totalDoctors} doctors loaded)`}
-                        </Button>
-                        <Button
-                            onClick={handleLoadAllDoctors}
-                            disabled={currentDoctorIndex >= totalDoctors || loading}
+                            onClick={fetchNodeDetails}
+                            disabled={allNodes.size === 0 || loadingNodeDetails}
                             variant="outline"
                         >
-                            {loading ? 'Loading...' : 'Load All'}
+                            {loadingNodeDetails ? 'Loading...' : (<><Settings size={16} /> Fetch Details</>)}
                         </Button>
-                    </>
-                )}
-                {error && (
-                    <div style={{ color: 'red', background: 'white', padding: '4px 8px', borderRadius: '4px' }}>
-                        Error: {error}
-                    </div>
-                )}
-            </div>
-            
-            {showCreateForm && (
-                <div style={{ 
-                    position: 'absolute', 
-                    top: 70, 
-                    left: 10, 
-                    background: '#1e293b', 
-                    border: '1px solid #475569', 
-                    borderRadius: '8px', 
-                    padding: '16px', 
-                    minWidth: '300px',
-                    zIndex: 20
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ color: '#e0e0e0', margin: 0 }}>Create New</h3>
-                        <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            onClick={() => setShowCreateForm(false)}
-                            style={{ padding: '4px' }}
+
+                        <Button
+                            onClick={loadConnections}
+                            disabled={allNodes.size === 0 || loadingConnections}
+                            variant={showConnections ? "default" : "outline"}
                         >
-                            <X size={16} />
+                            {loadingConnections ? 'Loading...' : (<><GitBranch size={16} /> {showConnections ? 'Connections Loaded' : 'Load Connections'}</>)}
                         </Button>
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                        <Button 
-                            size="sm"
-                            variant={createType === 'doctor' ? 'default' : 'outline'}
-                            onClick={() => setCreateType('doctor')}
-                        >
-                            Doctor
-                        </Button>
-                        <Button 
-                            size="sm"
-                            variant={createType === 'patient' ? 'default' : 'outline'}
-                            onClick={() => setCreateType('patient')}
-                        >
-                            Patient
-                        </Button>
-                    </div>
-                    
-                    {createType === 'doctor' ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div>
-                                <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                    Name *
-                                </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Button
+                                variant={showAllNodes ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setShowAllNodes(!showAllNodes)}
+                                style={{ fontSize: '12px', padding: '4px 8px' }}
+                            >
+                                {showAllNodes ? 'All Nodes' : `Top ${topK}`}
+                            </Button>
+                        </div>
+
+                        {!showAllNodes && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Limit:</label>
                                 <Input
-                                    value={newDoctorName}
-                                    onChange={(e) => setNewDoctorName(e.target.value)}
-                                    placeholder="Enter doctor name"
+                                    type="text"
+                                    value={topKInput}
+                                    onChange={(e) => {
+                                        setTopKInput(e.target.value);
+                                    }}
+                                    onBlur={() => {
+                                        const num = Number(topKInput);
+                                        if (!isNaN(num) && num > 0 && num <= 300) {
+                                            setTopK(num);
+                                        } else {
+                                            setTopKInput('100');
+                                            setTopK(100);
+                                        }
+                                    }}
+                                    style={{ width: '80px' }}
                                 />
                             </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <Button onClick={createDoctor} disabled={!newDoctorName.trim()}>
-                                    Create Doctor
-                                </Button>
-                                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
-                                    Cancel
-                                </Button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Name *
-                                    </label>
-                                    <Input
-                                        value={newPatientData.name}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, name: e.target.value }))}
-                                        placeholder="Patient name"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Age
-                                    </label>
-                                    <Input
-                                        type="number"
-                                        value={newPatientData.age}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, age: e.target.value }))}
-                                        placeholder="Age"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Gender
-                                    </label>
-                                    <Input
-                                        value={newPatientData.gender}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, gender: e.target.value }))}
-                                        placeholder="Gender"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Blood Type
-                                    </label>
-                                    <Input
-                                        value={newPatientData.blood_type}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, blood_type: e.target.value }))}
-                                        placeholder="Blood type"
-                                    />
-                                </div>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Medical Condition
-                                    </label>
-                                    <Input
-                                        value={newPatientData.medical_condition}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, medical_condition: e.target.value }))}
-                                        placeholder="Medical condition"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Insurance Provider
-                                    </label>
-                                    <Input
-                                        value={newPatientData.insurance_provider}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, insurance_provider: e.target.value }))}
-                                        placeholder="Insurance provider"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ color: '#e0e0e0', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
-                                        Room Number
-                                    </label>
-                                    <Input
-                                        value={newPatientData.room_number}
-                                        onChange={(e) => setNewPatientData(prev => ({ ...prev, room_number: e.target.value }))}
-                                        placeholder="Room number"
-                                    />
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <Button onClick={createPatient} disabled={!newPatientData.name.trim()}>
-                                    Create Patient
-                                </Button>
-                                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
-                                    Cancel
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-            <ForceGraph2D
-                ref={fgRef}
-                graphData={graphData}
-                onEngineStop={() => {
-                    if (!graphReady) {
-                        setGraphReady(true);
-                    }
-                }}
-                nodeCanvasObject={(node, ctx, globalScale) => drawNode(node, ctx, globalScale, node.id === hoveredNodeId)}
-                nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-                    if (node.__hitType === 'circle' && node.__hitSize) {
-                        ctx.beginPath();
-                        ctx.arc(node.x, node.y, node.__hitSize, 0, 2 * Math.PI, false);
-                        ctx.fillStyle = color;
-                        ctx.fill();
-                    } else if (node.__hitType === 'rect' && node.__hitDimensions) {
-                        const [w, h] = node.__hitDimensions;
-                        ctx.fillStyle = color;
-                        ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
-                    } else {
-                        ctx.beginPath();
-                        ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
-                        ctx.fillStyle = color;
-                        ctx.fill();
-                    }
-                }}
-                onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
-                onNodeClick={(node: any, event: MouseEvent) => {
-                    const nodeData = node.originalData as DataItem;
+                        )}
 
-                    // Get click position relative to canvas
-                    const canvas = event.target as HTMLCanvasElement;
-                    const rect = canvas.getBoundingClientRect();
-                    const canvasX = event.clientX - rect.left;
-                    const canvasY = event.clientY - rect.top;
+                        {error && (
+                            <div style={{ color: 'red', background: 'white', padding: '4px 8px', borderRadius: '4px' }}>
+                                Error: {error}
+                            </div>
+                        )}
 
-                    // Convert to graph coordinates
-                    const graphCoords = fgRef.current?.screen2GraphCoords(canvasX, canvasY);
-                    if (graphCoords) {
-                        // Check if clicked on "More" text
-                        if (node.__moreBounds) {
-                            const moreBounds = node.__moreBounds;
-                            const relX = graphCoords.x - node.x;
-                            const relY = graphCoords.y - node.y;
+                        {loadingSchema && (
+                            <div style={{ color: '#e0e0e0', background: '#1e293b', padding: '4px 8px', borderRadius: '4px', border: '1px solid #475569' }}>
+                                Loading schema...
+                            </div>
+                        )}
+                    </div>
 
-                            if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
-                                relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
-                                // Toggle expanded state
-                                event.preventDefault();
-                                event.stopPropagation();
-                                setExpandedNodes(prev => {
-                                    const newSet = new Set(prev);
-                                    if (newSet.has(node.id)) {
-                                        newSet.delete(node.id);
-                                    } else {
-                                        newSet.add(node.id);
+                    <ForceGraph2D
+                        ref={fgRef}
+                        graphData={graphData}
+                        onEngineStop={() => {
+                            if (!graphReady) {
+                                setGraphReady(true);
+                            }
+                        }}
+                        nodeCanvasObject={(node, ctx, globalScale) => drawNode(node, ctx, globalScale, node.id === hoveredNodeId)}
+                        nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                            if (node.__hitType === 'circle' && node.__hitSize) {
+                                ctx.beginPath();
+                                ctx.arc(node.x, node.y, node.__hitSize, 0, 2 * Math.PI, false);
+                                ctx.fillStyle = color;
+                                ctx.fill();
+                            } else if (node.__hitType === 'rect' && node.__hitDimensions) {
+                                const [w, h] = node.__hitDimensions;
+                                ctx.fillStyle = color;
+                                ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
+                            } else {
+                                ctx.beginPath();
+                                ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
+                                ctx.fillStyle = color;
+                                ctx.fill();
+                            }
+                        }}
+                        onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
+                        onNodeClick={(node: any, event: MouseEvent) => {
+                            const nodeData = node.originalData as DataItem;
+
+                            const canvas = event.target as HTMLCanvasElement;
+                            const rect = canvas.getBoundingClientRect();
+                            const canvasX = event.clientX - rect.left;
+                            const canvasY = event.clientY - rect.top;
+
+                            const graphCoords = fgRef.current?.screen2GraphCoords(canvasX, canvasY);
+                            if (graphCoords) {
+                                if (node.__moreBounds) {
+                                    const moreBounds = node.__moreBounds;
+                                    const relX = graphCoords.x - node.x;
+                                    const relY = graphCoords.y - node.y;
+
+                                    if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
+                                        relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setExpandedNodes(prev => {
+                                            const newSet = new Set(prev);
+                                            if (newSet.has(node.id)) {
+                                                newSet.delete(node.id);
+                                            } else {
+                                                newSet.add(node.id);
+                                            }
+                                            return newSet;
+                                        });
+                                        return;
                                     }
-                                    return newSet;
-                                });
-                                return;
+                                }
+
                             }
-                        }
 
-                        // Check if clicked on delete button
-                        if (node.__deleteBounds && (nodeData.label?.toLowerCase() === 'doctor' || nodeData.label?.toLowerCase() === 'patient')) {
-                            const deleteBounds = node.__deleteBounds;
-                            const relX = graphCoords.x - node.x;
-                            const relY = graphCoords.y - node.y;
-
-                            if (relX >= deleteBounds.x && relX <= deleteBounds.x + deleteBounds.width &&
-                                relY >= deleteBounds.y && relY <= deleteBounds.y + deleteBounds.height) {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                deleteNode(nodeData.id, nodeData.label || 'entity');
-                                return;
-                            }
-                        }
-
-                        if (nodeData.label?.toLowerCase() === 'doctor' && focusedNodeId === node.id && node.__buttonBounds) {
-                            const bounds = node.__buttonBounds;
-                            const relX = graphCoords.x - node.x;
-                            const relY = graphCoords.y - node.y;
-
-                            if (relX >= bounds.x && relX <= bounds.x + bounds.width &&
-                                relY >= bounds.y && relY <= bounds.y + bounds.height) {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                setLoadingPatients(true);
-                                fetchConnectedNodes(nodeData.id);
-                                return;
-                            }
-                        }
-                    }
-
-                    if (nodeData.label?.toLowerCase() === 'doctor') {
-                        setFocusedNodeId(node.id);
-                        setSelectedDoctorNode(nodeData);
-                    } else {
-                        if (fgRef.current) {
-                            // Center the node and zoom to a comfortable level
-                            fgRef.current.centerAt(node.x, node.y, 400);
-                            // Always zoom to a consistent level for better visibility
-                            fgRef.current.zoom(2.5, 400);
-                        }
-                    }
-                }}
-                linkColor={() => "#334155"}
-                linkWidth={2}
-                linkDirectionalParticles={(link: any) => {
-                    if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
-                    return 0;
-                }}
-                linkDirectionalParticleWidth={1.5}
-                linkDirectionalParticleSpeed={0.005}
-                linkDirectionalArrowLength={6}
-                linkDirectionalArrowRelPos={1}
-                cooldownTicks={focusedNodeId ? 50 : 100}
-                cooldownTime={focusedNodeId ? 5000 : 10000}
-                backgroundColor="#1a1a1a"
-                d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
-                d3VelocityDecay={0.8}
-                d3AlphaMin={0.001}
-                warmupTicks={focusedNodeId ? 0 : 50}
-                enableNodeDrag={true}
-                minZoom={0.01}
-                maxZoom={100}
-                onNodeDrag={(node: any) => {
-                    if (!isDraggingRef.current) {
-                        isDraggingRef.current = true;
-                        fgRef.current.d3Force('link').strength(0.4);
-                        fgRef.current.d3Force('charge').strength(-100);
-                    }
-                    node.fx = node.x;
-                    node.fy = node.y;
-                }}
-                onNodeDragEnd={(node: any) => {
-                    isDraggingRef.current = false;
-                    fgRef.current.d3Force('link').strength(0.4);
-                    fgRef.current.d3Force('charge').strength(-800);
-                    node.fx = node.x;
-                    node.fy = node.y;
-                    // Briefly pause and resume simulation to smooth reset
-                    fgRef.current.pauseAnimation();
-                    setTimeout(() => fgRef.current.resumeAnimation(), 50);
-                }}
-                onBackgroundClick={() => {
-                    setFocusedNodeId(null);
-                    setSelectedDoctorNode(null);
-                    if (fgRef.current) {
-                        fgRef.current.pauseAnimation();
-                        setTimeout(() => {
                             if (fgRef.current) {
-                                fgRef.current.resumeAnimation();
+                                fgRef.current.centerAt(node.x, node.y, 400);
+                                fgRef.current.zoom(2.5, 400);
                             }
-                        }, 100);
-                    }
-                }}
-                onZoom={({ k }) => {
-                    if (zoomTimeoutRef.current) {
-                        clearTimeout(zoomTimeoutRef.current);
-                    }
 
-                    zoomTimeoutRef.current = setTimeout(() => {
-                        lastZoomRef.current = k;
-                    }, 50);
-                }}
-            />
+                            setFocusedNodeId(node.id);
+                        }}
+                        linkColor={() => "#334155"}
+                        linkWidth={2}
+                        linkDirectionalParticles={(link: any) => {
+                            if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
+                            return 0;
+                        }}
+                        linkDirectionalParticleWidth={1.5}
+                        linkDirectionalParticleSpeed={0.005}
+                        linkDirectionalArrowLength={6}
+                        linkDirectionalArrowRelPos={1}
+                        cooldownTicks={focusedNodeId ? 30 : 50}
+                        cooldownTime={focusedNodeId ? 3000 : 5000}
+                        backgroundColor="#1a1a1a"
+                        d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
+                        d3VelocityDecay={0.8}
+                        d3AlphaMin={0.001}
+                        warmupTicks={focusedNodeId ? 0 : 50}
+                        enableNodeDrag={true}
+                        minZoom={0.01}
+                        maxZoom={100}
+                        onNodeDrag={(node: any) => {
+                            if (!isDraggingRef.current) {
+                                isDraggingRef.current = true;
+                                fgRef.current.d3Force('link').strength(0.4);
+                                fgRef.current.d3Force('charge').strength(-100);
+                            }
+                            node.fx = node.x;
+                            node.fy = node.y;
+                        }}
+                        onNodeDragEnd={(node: any) => {
+                            isDraggingRef.current = false;
+                            fgRef.current.d3Force('link').strength(0.4);
+                            fgRef.current.d3Force('charge').strength(-800);
+                            node.fx = node.x;
+                            node.fy = node.y;
+                            // Briefly pause and resume simulation to smooth reset
+                            fgRef.current.pauseAnimation();
+                            setTimeout(() => fgRef.current.resumeAnimation(), 50);
+                        }}
+                        onBackgroundClick={() => {
+                            setFocusedNodeId(null);
+                            if (fgRef.current) {
+                                fgRef.current.pauseAnimation();
+                                setTimeout(() => {
+                                    if (fgRef.current) {
+                                        fgRef.current.resumeAnimation();
+                                    }
+                                }, 100);
+                            }
+                        }}
+                        onZoom={({ k }) => {
+                            if (zoomTimeoutRef.current) {
+                                clearTimeout(zoomTimeoutRef.current);
+                            }
 
-        </div>
+                            zoomTimeoutRef.current = setTimeout(() => {
+                                lastZoomRef.current = k;
+                            }, 50);
+                        }}
+                    />
+
+                </div>
+            </SidebarInset>
+        </SidebarProvider>
     );
 };
 
