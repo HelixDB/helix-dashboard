@@ -348,6 +348,41 @@ const DataVisualization = () => {
                 yPos += fontSize * 1.2;
             }
 
+            if (detailOpacity > 0) {
+                const buttonSize = 18;
+                const buttonX = node.x + cardWidth! / 2 - buttonSize - 8;
+                const buttonY = node.y - cardHeight! / 2 + 8;
+
+                node.__expandBounds = {
+                    x: buttonX - node.x,
+                    y: buttonY - node.y,
+                    width: buttonSize,
+                    height: buttonSize
+                };
+
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                ctx.beginPath();
+                ctx.roundRect(buttonX, buttonY, buttonSize, buttonSize, 4);
+                ctx.fill();
+
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+
+                ctx.beginPath();
+                ctx.moveTo(buttonX + 6, buttonY + buttonSize / 2);
+                ctx.lineTo(buttonX + buttonSize - 6, buttonY + buttonSize / 2);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(buttonX + buttonSize / 2, buttonY + 6);
+                ctx.lineTo(buttonX + buttonSize / 2, buttonY + buttonSize - 6);
+                ctx.stroke();
+            }
 
             ctx.globalAlpha = originalAlpha;
         }
@@ -426,6 +461,14 @@ const DataVisualization = () => {
             }
         }, 200);
     }, [graphData]);
+
+    useEffect(() => {
+        if (fgRef.current && graphReady) {
+            fgRef.current.d3Force('link').strength(0.8);
+            fgRef.current.d3Force('charge').strength(-400);
+            fgRef.current.d3Force('center').strength(0.1);
+        }
+    }, [graphReady]);
 
     // Function to compute and update graph data
     const updateGraph = useCallback(() => {
@@ -529,6 +572,76 @@ const DataVisualization = () => {
         }
     }, [focusedNodeId]);
 
+    const expandNodeConnections = async (nodeId: string) => {
+        if (!nodeId || loadingConnections) return;
+
+        setLoadingConnections(true);
+        setError(null);
+
+        try {
+            const response = await fetch(`http://127.0.0.1:8080/node-connections?node_id=${encodeURIComponent(nodeId)}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch connections: ${response.status}`);
+            }
+
+            const connectionsText = await response.text();
+            const connections = JSON.parse(connectionsText);
+
+            const currentNodes = new Map(allNodes);
+            const currentEdges = [...edgeData];
+            const existingEdgeIds = new Set(currentEdges.map(edge => edge.id));
+
+            const connectedNodesData = connections.connected_nodes || [];
+            if (Array.isArray(connectedNodesData)) {
+                connectedNodesData.forEach((node: any) => {
+                    if (node.id && !currentNodes.has(node.id)) {
+                        currentNodes.set(node.id, node);
+                    }
+                });
+            }
+
+            const incomingEdgesData = connections.incoming_edges || [];
+            if (Array.isArray(incomingEdgesData)) {
+                incomingEdgesData.forEach((edge: any) => {
+                    if (edge.id && !existingEdgeIds.has(edge.id)) {
+                        const processedEdge = {
+                            from_node: edge.from_node || edge.from,
+                            to_node: edge.to_node || edge.to || nodeId,
+                            label: edge.label || edge.title || 'Edge',
+                            id: edge.id
+                        };
+                        currentEdges.push(processedEdge);
+                        existingEdgeIds.add(edge.id);
+                    }
+                });
+            }
+
+            const outgoingEdgesData = connections.outgoing_edges || [];
+            if (Array.isArray(outgoingEdgesData)) {
+                outgoingEdgesData.forEach((edge: any) => {
+                    if (edge.id && !existingEdgeIds.has(edge.id)) {
+                        const processedEdge = {
+                            from_node: edge.from_node || edge.from || nodeId,
+                            to_node: edge.to_node || edge.to,
+                            label: edge.label || edge.title || 'Edge',
+                            id: edge.id
+                        };
+                        currentEdges.push(processedEdge);
+                        existingEdgeIds.add(edge.id);
+                    }
+                });
+            }
+
+            setAllNodes(currentNodes);
+            setEdgeData(currentEdges);
+
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'Failed to expand connections');
+        } finally {
+            setLoadingConnections(false);
+        }
+    };
+
     const loadNodes = async () => {
         setLoading(true);
         setError(null);
@@ -569,10 +682,16 @@ const DataVisualization = () => {
 
             const newNodes = new Map();
 
-            const nodes = result.data?.nodes || [];
+            let nodes;
+            if (selectedNodeLabel) {
+                nodes = (result as any).nodes || [];
+            } else {
+                // nodes-edges endpoint returns nodes under data.nodes
+                nodes = result.data?.nodes || [];
+            }
 
             if (nodes && nodes.length > 0) {
-                nodes.forEach(node => {
+                nodes.forEach((node: DataItem) => {
                     newNodes.set(node.id, node);
                 });
             }
@@ -1006,6 +1125,16 @@ const DataVisualization = () => {
                                     const [w, h] = node.__hitDimensions;
                                     ctx.fillStyle = color;
                                     ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
+
+                                    if (node.__expandBounds) {
+                                        const expandBounds = node.__expandBounds;
+                                        ctx.fillRect(
+                                            node.x + expandBounds.x,
+                                            node.y + expandBounds.y,
+                                            expandBounds.width,
+                                            expandBounds.height
+                                        );
+                                    }
                                 } else {
                                     ctx.beginPath();
                                     ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
@@ -1045,6 +1174,19 @@ const DataVisualization = () => {
                                         }
                                     }
 
+                                    if (node.__expandBounds) {
+                                        const expandBounds = node.__expandBounds;
+                                        const relX = graphCoords.x - node.x;
+                                        const relY = graphCoords.y - node.y;
+
+                                        if (relX >= expandBounds.x && relX <= expandBounds.x + expandBounds.width &&
+                                            relY >= expandBounds.y && relY <= expandBounds.y + expandBounds.height) {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            expandNodeConnections(node.id);
+                                            return;
+                                        }
+                                    }
                                 }
 
                                 if (fgRef.current) {
@@ -1059,8 +1201,8 @@ const DataVisualization = () => {
 
                                 setFocusedNodeId(node.id);
                             }}
-                            linkColor={() => "#10b981"}
-                            linkWidth={3}
+                            linkColor={() => "#6b7280"}
+                            linkWidth={2}
                             linkDirectionalParticles={(link: any) => {
                                 if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
                                 return 0;
@@ -1082,16 +1224,16 @@ const DataVisualization = () => {
                             onNodeDrag={(node: any) => {
                                 if (!isDraggingRef.current) {
                                     isDraggingRef.current = true;
-                                    fgRef.current.d3Force('link').strength(0.4);
-                                    fgRef.current.d3Force('charge').strength(-100);
+                                    fgRef.current.d3Force('link').strength(0.8);
+                                    fgRef.current.d3Force('charge').strength(-150);
                                 }
                                 node.fx = node.x;
                                 node.fy = node.y;
                             }}
                             onNodeDragEnd={(node: any) => {
                                 isDraggingRef.current = false;
-                                fgRef.current.d3Force('link').strength(0.4);
-                                fgRef.current.d3Force('charge').strength(-800);
+                                fgRef.current.d3Force('link').strength(0.8);
+                                fgRef.current.d3Force('charge').strength(-400);
                                 node.fx = node.x;
                                 node.fy = node.y;
                                 fgRef.current.pauseAnimation();
