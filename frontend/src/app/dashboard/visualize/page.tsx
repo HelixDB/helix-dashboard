@@ -751,8 +751,37 @@ const DataVisualization = () => {
 
     useEffect(() => {
         fetchSchema();
+        loadNodes();
     }, []);
 
+    useEffect(() => {
+        if (schema.nodes.length > 0) {
+            loadNodes();
+        }
+    }, [selectedNodeLabel]);
+
+    useEffect(() => {
+        if (schema.nodes.length > 0) {
+            loadNodes();
+        }
+    }, [showAllNodes]);
+
+    useEffect(() => {
+        if (schema.nodes.length > 0) {
+            loadNodes();
+        }
+    }, [topK]);
+
+
+    const applyLimit = () => {
+        const num = Number(topKInput);
+        if (!isNaN(num) && num > 0 && num <= 300) {
+            setTopK(num);
+        } else {
+            setTopKInput('100');
+            setTopK(100);
+        }
+    };
 
     const clearGraph = () => {
         setSelectedNodeTypes([]);
@@ -780,7 +809,7 @@ const DataVisualization = () => {
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="outline">
-                                    {selectedNodeLabel || 'Select Node Type'}
+                                    {selectedNodeLabel || 'All Types'}
                                     <ChevronDown size={16} />
                                 </Button>
                             </DropdownMenuTrigger>
@@ -805,29 +834,30 @@ const DataVisualization = () => {
                             </DropdownMenuContent>
                         </DropdownMenu>
 
-                        <Button onClick={loadNodes} disabled={loading}>
-                            {loading ? 'Loading...' : (<><Plus size={16} /> Load Nodes</>)}
-                        </Button>
 
                         <Button onClick={clearGraph}>
                             <RotateCcw size={16} /> Clear
                         </Button>
 
-                        <Button
-                            onClick={fetchNodeDetails}
-                            disabled={allNodes.size === 0 || loadingNodeDetails}
-                            variant="outline"
-                        >
-                            {loadingNodeDetails ? 'Loading...' : (<><Settings size={16} /> Fetch Details</>)}
-                        </Button>
+                        {!selectedNodeLabel && (
+                            <>
+                                <Button
+                                    onClick={fetchNodeDetails}
+                                    disabled={allNodes.size === 0 || loadingNodeDetails}
+                                    variant="outline"
+                                >
+                                    {loadingNodeDetails ? 'Loading...' : (<><Settings size={16} /> Fetch Details</>)}
+                                </Button>
 
-                        <Button
-                            onClick={loadConnections}
-                            disabled={allNodes.size === 0 || loadingConnections}
-                            variant={showConnections ? "default" : "outline"}
-                        >
-                            {loadingConnections ? 'Loading...' : (<><GitBranch size={16} /> {showConnections ? 'Connections Loaded' : 'Load Connections'}</>)}
-                        </Button>
+                                <Button
+                                    onClick={loadConnections}
+                                    disabled={allNodes.size === 0 || loadingConnections}
+                                    variant={showConnections ? "default" : "outline"}
+                                >
+                                    {loadingConnections ? 'Loading...' : (<><GitBranch size={16} /> {showConnections ? 'Connections Loaded' : 'Load Connections'}</>)}
+                                </Button>
+                            </>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Button
                                 variant={showAllNodes ? "default" : "outline"}
@@ -842,23 +872,29 @@ const DataVisualization = () => {
                         {!showAllNodes && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <label style={{ color: '#e0e0e0', fontSize: '14px' }}>Limit:</label>
-                                <Input
-                                    type="text"
-                                    value={topKInput}
-                                    onChange={(e) => {
-                                        setTopKInput(e.target.value);
-                                    }}
-                                    onBlur={() => {
-                                        const num = Number(topKInput);
-                                        if (!isNaN(num) && num > 0 && num <= 300) {
-                                            setTopK(num);
-                                        } else {
-                                            setTopKInput('100');
-                                            setTopK(100);
-                                        }
-                                    }}
-                                    style={{ width: '80px' }}
-                                />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Input
+                                        type="text"
+                                        value={topKInput}
+                                        onChange={(e) => {
+                                            setTopKInput(e.target.value);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyLimit();
+                                            }
+                                        }}
+                                        style={{ width: '80px' }}
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={applyLimit}
+                                        style={{ padding: '4px 8px', minWidth: 'auto' }}
+                                    >
+                                        <Check size={14} />
+                                    </Button>
+                                </div>
                             </div>
                         )}
 

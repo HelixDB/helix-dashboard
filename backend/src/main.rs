@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use clap::{Parser, ValueEnum};
+use dotenv::dotenv;
 use helix_rs::{HelixDB, HelixDBClient};
 use serde_json::{Map, Value};
 use std::sync::Arc;
@@ -51,6 +52,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     let args = Args::parse();
 
     let helix_url = match args.source {
@@ -71,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         DataSource::Cloud => {
             let url = args
                 .cloud_url
+                .clone()
                 .expect("Cloud URL is required for cloud mode");
             println!("Starting server in cloud mode");
             println!("Using cloud HelixDB endpoint: {}/introspect", url);
@@ -78,7 +81,17 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let helix_db = Arc::new(HelixDB::new(Some("http://localhost"), Some(args.port)));
+    let helix_db = match args.source {
+        DataSource::Cloud => {
+            let cloud_api_url = args
+                .cloud_url
+                .as_ref()
+                .expect("Cloud URL is required for cloud mode");
+            let api_key = std::env::var("HELIX_API_KEY").ok();
+            Arc::new(HelixDB::new(Some(cloud_api_url), None, api_key.as_deref()))
+        }
+        _ => Arc::new(HelixDB::new(None, None, None)),
+    };
 
     let app_state = AppState {
         helix_db: helix_db.clone(),
