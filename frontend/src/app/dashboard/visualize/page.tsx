@@ -19,7 +19,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X, Settings } from 'lucide-react';
+import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X } from 'lucide-react';
 
 interface DataItem {
     id: string;
@@ -54,6 +54,7 @@ interface NodesEdgesResponse {
         num_edges: number;
         num_vectors: number;
     };
+    error?: string;
 }
 
 interface ApiResponse {
@@ -73,10 +74,8 @@ const DataVisualization = () => {
     const [selectedNodeLabel, setSelectedNodeLabel] = useState<string>('');
     const [loadingSchema, setLoadingSchema] = useState(true);
     const [showAllNodes, setShowAllNodes] = useState(false);
-    const [loadingNodeDetails, setLoadingNodeDetails] = useState(false);
     const [loadingConnections, setLoadingConnections] = useState(false);
     const [showConnections, setShowConnections] = useState(false);
-    const [, forceUpdate] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -93,21 +92,8 @@ const DataVisualization = () => {
     const capturedZoomRef = useRef<number | null>(null);
     const [capturedPositions, setCapturedPositions] = useState<Map<string, { x: number, y: number }>>(new Map());
     const [graphReady, setGraphReady] = useState(false);
+    const pendingFocusRef = useRef<{ nodeId: string, position: { x: number, y: number } } | null>(null);
 
-    // Simple zoom to fit when focused node changes
-    useEffect(() => {
-        if (!fgRef.current) return;
-
-        if (focusedNodeId) {
-            // When focusing on a single node, center and set a reasonable zoom level
-            setTimeout(() => {
-                if (fgRef.current) {
-                    fgRef.current.centerAt(0, 0, 400);
-                    fgRef.current.zoom(1.5, 400); // Fixed zoom level for single node view
-                }
-            }, 300);
-        }
-    }, [focusedNodeId]);
 
     const getNodeColor = useCallback((item: DataItem): string => {
         const label = item.label || 'Entity';
@@ -406,7 +392,11 @@ const DataVisualization = () => {
 
         const nodeIds = new Set(nodes.map(n => n.id));
         const links = edgeData
-            .filter(edge => nodeIds.has(edge.from_node) && nodeIds.has(edge.to_node))
+            .filter(edge => {
+                const hasFrom = nodeIds.has(edge.from_node);
+                const hasTo = nodeIds.has(edge.to_node);
+                return hasFrom && hasTo;
+            })
             .map(edge => ({
                 source: edge.from_node,
                 target: edge.to_node,
@@ -414,23 +404,37 @@ const DataVisualization = () => {
                 isVirtual: false
             }));
 
+
         return { nodes, links };
     }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
 
+    useEffect(() => {
+        if (!fgRef.current || !pendingFocusRef.current || !graphData) return;
+
+        const { nodeId } = pendingFocusRef.current;
+
+        setTimeout(() => {
+            if (fgRef.current) {
+                const focusedNode = graphData.nodes.find((n: any) => n.id === nodeId);
+
+                if (focusedNode) {
+                    fgRef.current.centerAt(focusedNode.x, focusedNode.y, 600);
+                    fgRef.current.zoom(2.5, 600);
+                }
+
+                pendingFocusRef.current = null;
+            }
+        }, 200);
+    }, [graphData]);
+
     // Function to compute and update graph data
     const updateGraph = useCallback(() => {
-        if (!fgRef.current) {
-            console.warn('fgRef.current is null');
-            return;
-        }
-        if (!containerRef.current) {
-            console.warn('containerRef.current is null');
+        if (!fgRef.current || !containerRef.current) {
             return;
         }
 
         // Check if graphData method exists
         if (typeof fgRef.current.graphData !== 'function') {
-            console.warn('ForceGraph not yet initialized - graphData is not a function');
             return;
         }
 
@@ -444,7 +448,6 @@ const DataVisualization = () => {
 
         // Check if screen2GraphCoords method exists
         if (typeof fgRef.current.screen2GraphCoords !== 'function') {
-            console.warn('ForceGraph screen2GraphCoords not available');
             return;
         }
 
@@ -553,7 +556,6 @@ const DataVisualization = () => {
                 url += '?' + params.join('&');
             }
 
-
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -567,19 +569,24 @@ const DataVisualization = () => {
 
             const newNodes = new Map();
 
-            const nodes = result.data?.nodes || result.nodes || [];
+            const nodes = result.data?.nodes || [];
+
             if (nodes && nodes.length > 0) {
                 nodes.forEach(node => {
                     newNodes.set(node.id, node);
                 });
             }
 
-
-            setAllNodes(newNodes);
             setEdgeData([]);
 
+            if (newNodes.size > 0) {
+                const nodesWithDetails = await fetchNodeDetailsForNodes(newNodes);
+                setAllNodes(nodesWithDetails);
+            } else {
+                setAllNodes(new Map());
+            }
+
         } catch (error) {
-            console.error('Failed to load nodes:', error);
             setError(error instanceof Error ? error.message : 'Failed to load nodes');
         } finally {
             setLoading(false);
@@ -592,64 +599,109 @@ const DataVisualization = () => {
             return;
         }
 
+        if (showConnections) {
+            setError('Connections already loaded. Clear and reload nodes to reset.');
+            return;
+        }
+
         setLoadingConnections(true);
         setError(null);
 
         try {
-            let url = 'http://127.0.0.1:8080/nodes-edges';
-            if (!showAllNodes) {
-                url += `?limit=${Math.max(topK * 10, 1000)}`;
-            }
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const result: NodesEdgesResponse = await response.json();
-
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            const nodeIds = new Set(Array.from(allNodes.keys()));
-            const newEdges: any[] = [];
+            const existingNodeIds = Array.from(allNodes.keys());
+            const allEdges: any[] = [];
             const connectedNodes = new Map(allNodes);
+            const newNodeIds = new Set<string>();
 
-            result.data.edges.forEach(edge => {
-                const hasFromNode = nodeIds.has(edge.from);
-                const hasToNode = nodeIds.has(edge.to);
 
-                if (hasFromNode || hasToNode) {
-                    newEdges.push({
-                        from_node: edge.from,
-                        to_node: edge.to,
-                        label: edge.title || 'Edge',
-                        id: edge.id
-                    });
+            const batchSize = 10;
+            for (let i = 0; i < existingNodeIds.length; i += batchSize) {
+                const batch = existingNodeIds.slice(i, i + batchSize);
 
-                    if (!hasFromNode) {
-                        const fromNode = result.data.nodes.find(n => n.id === edge.from);
-                        if (fromNode) {
-                            connectedNodes.set(fromNode.id, fromNode);
+                const batchPromises = batch.map(async (nodeId) => {
+                    try {
+                        const response = await fetch(`http://127.0.0.1:8080/node-connections?node_id=${encodeURIComponent(nodeId)}`);
+                        if (!response.ok) {
+                            return null;
                         }
+
+                        const connectionsText = await response.text();
+                        const connections = JSON.parse(connectionsText);
+                        return { nodeId, connections };
+                    } catch (error) {
+                        return null;
                     }
-                    if (!hasToNode) {
-                        const toNode = result.data.nodes.find(n => n.id === edge.to);
-                        if (toNode) {
-                            connectedNodes.set(toNode.id, toNode);
-                        }
+                });
+
+                const batchResults = await Promise.all(batchPromises);
+
+                batchResults.forEach((result) => {
+                    if (!result || !result.connections) return;
+
+                    const { connections } = result;
+
+                    const connectedNodesData = connections.connected_nodes || [];
+
+                    if (Array.isArray(connectedNodesData)) {
+                        connectedNodesData.forEach((node: any) => {
+                            if (node.id && !connectedNodes.has(node.id)) {
+                                connectedNodes.set(node.id, node);
+                                newNodeIds.add(node.id);
+                            }
+                        });
                     }
-                }
-            });
+
+                    const incomingEdgesData = connections.incoming_edges || [];
+
+                    if (Array.isArray(incomingEdgesData)) {
+                        incomingEdgesData.forEach((edge: any) => {
+                            const processedEdge = {
+                                from_node: edge.from_node || edge.from,
+                                to_node: edge.to_node || edge.to || result.nodeId,
+                                label: edge.label || edge.title || 'Edge',
+                                id: edge.id
+                            };
+                            allEdges.push(processedEdge);
+                        });
+                    }
+
+                    const outgoingEdgesData = connections.outgoing_edges || [];
+
+                    if (Array.isArray(outgoingEdgesData)) {
+                        outgoingEdgesData.forEach((edge: any) => {
+                            const processedEdge = {
+                                from_node: edge.from_node || edge.from || result.nodeId,
+                                to_node: edge.to_node || edge.to,
+                                label: edge.label || edge.title || 'Edge',
+                                id: edge.id
+                            };
+                            allEdges.push(processedEdge);
+                        });
+                    }
+                });
+            }
+
+            if (newNodeIds.size > 0) {
+                const newNodesMap = new Map();
+                newNodeIds.forEach(nodeId => {
+                    const node = connectedNodes.get(nodeId);
+                    if (node) {
+                        newNodesMap.set(nodeId, node);
+                    }
+                });
+
+                const nodesWithDetails = await fetchNodeDetailsForNodes(newNodesMap);
+                nodesWithDetails.forEach((detailedNode, nodeId) => {
+                    connectedNodes.set(nodeId, detailedNode);
+                });
+            }
 
 
             setAllNodes(connectedNodes);
-            setEdgeData(newEdges);
+            setEdgeData(allEdges);
             setShowConnections(true);
 
         } catch (error) {
-            console.error('Failed to load connections:', error);
             setError(error instanceof Error ? error.message : 'Failed to load connections');
         } finally {
             setLoadingConnections(false);
@@ -662,28 +714,71 @@ const DataVisualization = () => {
         try {
             const response = await fetch('http://127.0.0.1:8080/api/schema');
             const data: SchemaInfo = await response.json();
-            setSchema(data);
+
+            if (!data.nodes || data.nodes.length === 0) {
+                await discoverNodeTypesFromData();
+            } else {
+                setSchema(data);
+            }
+
             setLoadingSchema(false);
         } catch (error) {
-            console.error('Failed to fetch schema:', error);
+            await discoverNodeTypesFromData();
             setLoadingSchema(false);
         }
     };
 
-    const fetchNodeDetails = async () => {
-        if (allNodes.size === 0) {
-            setError('No nodes loaded to fetch details for');
-            return;
-        }
-
-        setLoadingNodeDetails(true);
-        setError(null);
-
+    const discoverNodeTypesFromData = async () => {
         try {
-            const nodeIds = Array.from(allNodes.keys());
+            const response = await fetch('http://127.0.0.1:8080/nodes-edges?limit=100');
+            if (!response.ok) return;
 
+            const result = await response.json();
+            const nodes = result.data?.nodes || [];
+
+            const nodeTypes = new Set<string>();
+
+            for (let i = 0; i < Math.min(nodes.length, 20); i++) {
+                const node = nodes[i];
+                try {
+                    const detailResponse = await fetch(`http://127.0.0.1:8080/node-details?id=${encodeURIComponent(node.id)}`);
+                    if (detailResponse.ok) {
+                        const details = await detailResponse.json();
+                        let nodeData = null;
+
+                        if (details.found && details.node) {
+                            nodeData = details.node;
+                        } else if (details.data) {
+                            nodeData = details.data;
+                        } else {
+                            nodeData = details;
+                        }
+
+                        if (nodeData && nodeData.label) {
+                            nodeTypes.add(nodeData.label);
+                        }
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+
+            const discoveredSchema: SchemaInfo = {
+                nodes: Array.from(nodeTypes).map(type => ({ name: type, properties: [] })),
+                edges: []
+            };
+
+            setSchema(discoveredSchema);
+        } catch (error) {
+            setSchema({ nodes: [], edges: [] });
+        }
+    };
+
+    const fetchNodeDetailsForNodes = async (nodes: Map<string, DataItem>) => {
+        try {
+            const nodeIds = Array.from(nodes.keys());
             const batchSize = 10;
-            const updatedNodes = new Map(allNodes);
+            const updatedNodes = new Map(nodes);
 
             for (let i = 0; i < nodeIds.length; i += batchSize) {
                 const batch = nodeIds.slice(i, i + batchSize);
@@ -692,13 +787,11 @@ const DataVisualization = () => {
                     try {
                         const response = await fetch(`http://127.0.0.1:8080/node-details?id=${encodeURIComponent(nodeId)}`);
                         if (!response.ok) {
-                            console.warn(`Failed to fetch details for node ${nodeId}: ${response.status}`);
                             return null;
                         }
                         const details = await response.json();
                         return { nodeId, details };
                     } catch (error) {
-                        console.warn(`Error fetching details for node ${nodeId}:`, error);
                         return null;
                     }
                 });
@@ -709,7 +802,6 @@ const DataVisualization = () => {
                     if (result && result.details) {
                         const existingNode = updatedNodes.get(result.nodeId);
                         if (existingNode) {
-
                             let nodeData = null;
 
                             if (result.details.found && result.details.node) {
@@ -723,7 +815,6 @@ const DataVisualization = () => {
                             }
 
                             if (nodeData && typeof nodeData === 'object') {
-
                                 updatedNodes.set(result.nodeId, {
                                     ...existingNode,
                                     ...nodeData,
@@ -736,18 +827,14 @@ const DataVisualization = () => {
                 });
             }
 
-            setAllNodes(updatedNodes);
-
-
-            forceUpdate({});
+            return updatedNodes;
 
         } catch (error) {
-            console.error('Failed to fetch node details:', error);
             setError(error instanceof Error ? error.message : 'Failed to fetch node details');
-        } finally {
-            setLoadingNodeDetails(false);
+            return nodes;
         }
     };
+
 
     useEffect(() => {
         fetchSchema();
@@ -791,11 +878,9 @@ const DataVisualization = () => {
         setAllNodes(new Map());
         setEdgeData([]);
         setFocusedNodeId(null);
+
     };
 
-
-
-    const wasFocusedRef = useRef(false);
 
 
 
@@ -840,23 +925,13 @@ const DataVisualization = () => {
                         </Button>
 
                         {!selectedNodeLabel && (
-                            <>
-                                <Button
-                                    onClick={fetchNodeDetails}
-                                    disabled={allNodes.size === 0 || loadingNodeDetails}
-                                    variant="outline"
-                                >
-                                    {loadingNodeDetails ? 'Loading...' : (<><Settings size={16} /> Fetch Details</>)}
-                                </Button>
-
-                                <Button
-                                    onClick={loadConnections}
-                                    disabled={allNodes.size === 0 || loadingConnections}
-                                    variant={showConnections ? "default" : "outline"}
-                                >
-                                    {loadingConnections ? 'Loading...' : (<><GitBranch size={16} /> {showConnections ? 'Connections Loaded' : 'Load Connections'}</>)}
-                                </Button>
-                            </>
+                            <Button
+                                onClick={loadConnections}
+                                disabled={allNodes.size === 0 || loadingConnections}
+                                variant={showConnections ? "default" : "outline"}
+                            >
+                                {loadingConnections ? 'Loading...' : (<><GitBranch size={16} /> {showConnections ? 'Connections Loaded' : 'Load Connections'}</>)}
+                            </Button>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Button
@@ -911,134 +986,184 @@ const DataVisualization = () => {
                         )}
                     </div>
 
-                    <ForceGraph2D
-                        ref={fgRef}
-                        graphData={graphData}
-                        onEngineStop={() => {
-                            if (!graphReady) {
-                                setGraphReady(true);
-                            }
-                        }}
-                        nodeCanvasObject={(node, ctx, globalScale) => drawNode(node, ctx, globalScale, node.id === hoveredNodeId)}
-                        nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-                            if (node.__hitType === 'circle' && node.__hitSize) {
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, node.__hitSize, 0, 2 * Math.PI, false);
-                                ctx.fillStyle = color;
-                                ctx.fill();
-                            } else if (node.__hitType === 'rect' && node.__hitDimensions) {
-                                const [w, h] = node.__hitDimensions;
-                                ctx.fillStyle = color;
-                                ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
-                            } else {
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
-                                ctx.fillStyle = color;
-                                ctx.fill();
-                            }
-                        }}
-                        onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
-                        onNodeClick={(node: any, event: MouseEvent) => {
-                            const nodeData = node.originalData as DataItem;
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                        <ForceGraph2D
+                            ref={fgRef}
+                            graphData={graphData}
+                            onEngineStop={() => {
+                                if (!graphReady) {
+                                    setGraphReady(true);
+                                }
+                            }}
+                            nodeCanvasObject={(node, ctx, globalScale) => drawNode(node, ctx, globalScale, node.id === hoveredNodeId)}
+                            nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                                if (node.__hitType === 'circle' && node.__hitSize) {
+                                    ctx.beginPath();
+                                    ctx.arc(node.x, node.y, node.__hitSize, 0, 2 * Math.PI, false);
+                                    ctx.fillStyle = color;
+                                    ctx.fill();
+                                } else if (node.__hitType === 'rect' && node.__hitDimensions) {
+                                    const [w, h] = node.__hitDimensions;
+                                    ctx.fillStyle = color;
+                                    ctx.fillRect(node.x - w / 2, node.y - h / 2, w, h);
+                                } else {
+                                    ctx.beginPath();
+                                    ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
+                                    ctx.fillStyle = color;
+                                    ctx.fill();
+                                }
+                            }}
+                            onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
+                            onNodeClick={(node: any, event: MouseEvent) => {
 
-                            const canvas = event.target as HTMLCanvasElement;
-                            const rect = canvas.getBoundingClientRect();
-                            const canvasX = event.clientX - rect.left;
-                            const canvasY = event.clientY - rect.top;
+                                const canvas = event.target as HTMLCanvasElement;
+                                const rect = canvas.getBoundingClientRect();
+                                const canvasX = event.clientX - rect.left;
+                                const canvasY = event.clientY - rect.top;
 
-                            const graphCoords = fgRef.current?.screen2GraphCoords(canvasX, canvasY);
-                            if (graphCoords) {
-                                if (node.__moreBounds) {
-                                    const moreBounds = node.__moreBounds;
-                                    const relX = graphCoords.x - node.x;
-                                    const relY = graphCoords.y - node.y;
+                                const graphCoords = fgRef.current?.screen2GraphCoords(canvasX, canvasY);
+                                if (graphCoords) {
+                                    if (node.__moreBounds) {
+                                        const moreBounds = node.__moreBounds;
+                                        const relX = graphCoords.x - node.x;
+                                        const relY = graphCoords.y - node.y;
 
-                                    if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
-                                        relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        setExpandedNodes(prev => {
-                                            const newSet = new Set(prev);
-                                            if (newSet.has(node.id)) {
-                                                newSet.delete(node.id);
-                                            } else {
-                                                newSet.add(node.id);
-                                            }
-                                            return newSet;
-                                        });
-                                        return;
+                                        if (relX >= moreBounds.x && relX <= moreBounds.x + moreBounds.width &&
+                                            relY >= moreBounds.y && relY <= moreBounds.y + moreBounds.height) {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setExpandedNodes(prev => {
+                                                const newSet = new Set(prev);
+                                                if (newSet.has(node.id)) {
+                                                    newSet.delete(node.id);
+                                                } else {
+                                                    newSet.add(node.id);
+                                                }
+                                                return newSet;
+                                            });
+                                            return;
+                                        }
                                     }
+
                                 }
 
-                            }
+                                if (fgRef.current) {
+                                    fgRef.current.centerAt(node.x, node.y, 800);
+                                    fgRef.current.zoom(2, 800);
+                                }
 
-                            if (fgRef.current) {
-                                fgRef.current.centerAt(node.x, node.y, 400);
-                                fgRef.current.zoom(2.5, 400);
-                            }
+                                pendingFocusRef.current = {
+                                    nodeId: node.id,
+                                    position: { x: node.x, y: node.y }
+                                };
 
-                            setFocusedNodeId(node.id);
-                        }}
-                        linkColor={() => "#334155"}
-                        linkWidth={2}
-                        linkDirectionalParticles={(link: any) => {
-                            if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
-                            return 0;
-                        }}
-                        linkDirectionalParticleWidth={1.5}
-                        linkDirectionalParticleSpeed={0.005}
-                        linkDirectionalArrowLength={6}
-                        linkDirectionalArrowRelPos={1}
-                        cooldownTicks={focusedNodeId ? 30 : 50}
-                        cooldownTime={focusedNodeId ? 3000 : 5000}
-                        backgroundColor="#1a1a1a"
-                        d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
-                        d3VelocityDecay={0.8}
-                        d3AlphaMin={0.001}
-                        warmupTicks={focusedNodeId ? 0 : 50}
-                        enableNodeDrag={true}
-                        minZoom={0.01}
-                        maxZoom={100}
-                        onNodeDrag={(node: any) => {
-                            if (!isDraggingRef.current) {
-                                isDraggingRef.current = true;
+                                setFocusedNodeId(node.id);
+                            }}
+                            linkColor={() => "#10b981"}
+                            linkWidth={3}
+                            linkDirectionalParticles={(link: any) => {
+                                if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
+                                return 0;
+                            }}
+                            linkDirectionalParticleWidth={1.5}
+                            linkDirectionalParticleSpeed={0.005}
+                            linkDirectionalArrowLength={6}
+                            linkDirectionalArrowRelPos={1}
+                            cooldownTicks={focusedNodeId ? 30 : 50}
+                            cooldownTime={focusedNodeId ? 3000 : 5000}
+                            backgroundColor="#1a1a1a"
+                            d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
+                            d3VelocityDecay={0.8}
+                            d3AlphaMin={0.001}
+                            warmupTicks={focusedNodeId ? 0 : 50}
+                            enableNodeDrag={true}
+                            minZoom={0.01}
+                            maxZoom={100}
+                            onNodeDrag={(node: any) => {
+                                if (!isDraggingRef.current) {
+                                    isDraggingRef.current = true;
+                                    fgRef.current.d3Force('link').strength(0.4);
+                                    fgRef.current.d3Force('charge').strength(-100);
+                                }
+                                node.fx = node.x;
+                                node.fy = node.y;
+                            }}
+                            onNodeDragEnd={(node: any) => {
+                                isDraggingRef.current = false;
                                 fgRef.current.d3Force('link').strength(0.4);
-                                fgRef.current.d3Force('charge').strength(-100);
-                            }
-                            node.fx = node.x;
-                            node.fy = node.y;
-                        }}
-                        onNodeDragEnd={(node: any) => {
-                            isDraggingRef.current = false;
-                            fgRef.current.d3Force('link').strength(0.4);
-                            fgRef.current.d3Force('charge').strength(-800);
-                            node.fx = node.x;
-                            node.fy = node.y;
-                            // Briefly pause and resume simulation to smooth reset
-                            fgRef.current.pauseAnimation();
-                            setTimeout(() => fgRef.current.resumeAnimation(), 50);
-                        }}
-                        onBackgroundClick={() => {
-                            setFocusedNodeId(null);
-                            if (fgRef.current) {
+                                fgRef.current.d3Force('charge').strength(-800);
+                                node.fx = node.x;
+                                node.fy = node.y;
                                 fgRef.current.pauseAnimation();
-                                setTimeout(() => {
-                                    if (fgRef.current) {
-                                        fgRef.current.resumeAnimation();
-                                    }
-                                }, 100);
-                            }
-                        }}
-                        onZoom={({ k }) => {
-                            if (zoomTimeoutRef.current) {
-                                clearTimeout(zoomTimeoutRef.current);
-                            }
+                                setTimeout(() => fgRef.current.resumeAnimation(), 50);
+                            }}
+                            onBackgroundClick={() => {
+                                setFocusedNodeId(null);
+                                pendingFocusRef.current = null;
+                                if (fgRef.current) {
+                                    fgRef.current.pauseAnimation();
+                                    setTimeout(() => {
+                                        if (fgRef.current) {
+                                            fgRef.current.resumeAnimation();
+                                        }
+                                    }, 100);
+                                }
+                            }}
+                            onZoom={({ k }) => {
+                                if (zoomTimeoutRef.current) {
+                                    clearTimeout(zoomTimeoutRef.current);
+                                }
 
-                            zoomTimeoutRef.current = setTimeout(() => {
-                                lastZoomRef.current = k;
-                            }, 50);
-                        }}
-                    />
+                                zoomTimeoutRef.current = setTimeout(() => {
+                                    lastZoomRef.current = k;
+                                }, 50);
+                            }}
+                        />
+
+                        {/* Loading overlay */}
+                        {(loading || loadingConnections || loadingSchema) && (
+                            <div style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                zIndex: 10,
+                                backdropFilter: 'blur(3px)'
+                            }}>
+                                <div style={{
+                                    color: '#ffffff',
+                                    fontSize: '20px',
+                                    fontWeight: '600',
+                                    textAlign: 'center',
+                                    padding: '20px 30px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                    borderRadius: '12px',
+                                    border: '2px solid rgba(16, 185, 129, 0.3)',
+                                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+                                }}>
+                                    <div style={{
+                                        marginBottom: '12px',
+                                        background: 'linear-gradient(135deg, #10b981, #3b82f6)',
+                                        backgroundClip: 'text',
+                                        WebkitBackgroundClip: 'text',
+                                        WebkitTextFillColor: 'transparent'
+                                    }}>
+                                        Loading...
+                                    </div>
+                                    <div style={{ fontSize: '14px', opacity: 0.9, color: '#cbd5e1' }}>
+                                        {loading && 'Fetching nodes'}
+                                        {loadingConnections && 'Loading connections'}
+                                        {loadingSchema && 'Loading schema'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                 </div>
             </SidebarInset>
