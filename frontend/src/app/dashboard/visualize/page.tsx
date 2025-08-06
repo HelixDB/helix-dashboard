@@ -8,7 +8,6 @@ import {
     SidebarProvider,
     SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -19,7 +18,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, GitBranch, Circle, RotateCcw, Download, Check, ChevronDown, Search, X } from 'lucide-react';
+import { GitBranch, RotateCcw, Check, ChevronDown } from 'lucide-react';
 
 interface DataItem {
     id: string;
@@ -57,9 +56,6 @@ interface NodesEdgesResponse {
     error?: string;
 }
 
-interface ApiResponse {
-    [key: string]: DataItem[] | any;
-}
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
@@ -70,14 +66,11 @@ const DataVisualization = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [schema, setSchema] = useState<SchemaInfo>({ nodes: [], edges: [] });
-    const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
     const [selectedNodeLabel, setSelectedNodeLabel] = useState<string>('');
     const [loadingSchema, setLoadingSchema] = useState(true);
     const [showAllNodes, setShowAllNodes] = useState(false);
     const [loadingConnections, setLoadingConnections] = useState(false);
     const [showConnections, setShowConnections] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [dropdownOpen, setDropdownOpen] = useState(false);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [topK, setTopK] = useState<number>(100);
     const [topKInput, setTopKInput] = useState<string>('100');
@@ -88,9 +81,6 @@ const DataVisualization = () => {
     const lastZoomRef = useRef<number>(1);
     const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const capturedCenterRef = useRef<{ x: number; y: number } | null>(null);
-    const capturedZoomRef = useRef<number | null>(null);
-    const [capturedPositions, setCapturedPositions] = useState<Map<string, { x: number, y: number }>>(new Map());
     const [graphReady, setGraphReady] = useState(false);
     const pendingFocusRef = useRef<{ nodeId: string, position: { x: number, y: number } } | null>(null);
 
@@ -401,9 +391,21 @@ const DataVisualization = () => {
 
             const totalNodes = allNodes.size;
             const angle = (index * 137.5 + hash % 360) * Math.PI / 180;
-            const baseRadius = 300;
-            const radiusVariation = (hash % 200) + baseRadius;
-            const radius = baseRadius + (index * 50) + radiusVariation;
+            
+            let baseRadius, radiusIncrement;
+            if (totalNodes <= 100) {
+                baseRadius = 100;
+                radiusIncrement = 15;
+            } else if (totalNodes <= 500) {
+                baseRadius = 80;
+                radiusIncrement = 8;
+            } else {
+                baseRadius = 60;
+                radiusIncrement = 4;
+            }
+            
+            const radiusVariation = (hash % 50);
+            const radius = baseRadius + (index * radiusIncrement) + radiusVariation;
 
             return {
                 id: item.id,
@@ -464,13 +466,42 @@ const DataVisualization = () => {
 
     useEffect(() => {
         if (fgRef.current && graphReady) {
-            fgRef.current.d3Force('link').strength(0.8);
-            fgRef.current.d3Force('charge').strength(-400);
-            fgRef.current.d3Force('center').strength(0.1);
+            const nodeCount = allNodes.size;
+            const hasConnections = edgeData.length > 0;
+            
+            if (hasConnections) {
+                if (nodeCount <= 50) {
+                    fgRef.current.d3Force('link').strength(1.0);
+                    fgRef.current.d3Force('charge').strength(-300);
+                    fgRef.current.d3Force('center').strength(0.08);
+                } else if (nodeCount <= 500) {
+                    fgRef.current.d3Force('link').strength(0.7);
+                    fgRef.current.d3Force('charge').strength(-150);
+                    fgRef.current.d3Force('center').strength(0.04);
+                } else {
+                    fgRef.current.d3Force('link').strength(0.5);
+                    fgRef.current.d3Force('charge').strength(-80);
+                    fgRef.current.d3Force('center').strength(0.02);
+                }
+            } else {
+                // Original settings for non-connected graphs
+                if (nodeCount <= 50) {
+                    fgRef.current.d3Force('link').strength(0.8);
+                    fgRef.current.d3Force('charge').strength(-400);
+                    fgRef.current.d3Force('center').strength(0.1);
+                } else if (nodeCount <= 500) {
+                    fgRef.current.d3Force('link').strength(0.4);
+                    fgRef.current.d3Force('charge').strength(-200);
+                    fgRef.current.d3Force('center').strength(0.05);
+                } else {
+                    fgRef.current.d3Force('link').strength(0.2);
+                    fgRef.current.d3Force('charge').strength(-100);
+                    fgRef.current.d3Force('center').strength(0.02);
+                }
+            }
         }
-    }, [graphReady]);
+    }, [graphReady, allNodes.size, edgeData.length]);
 
-    // Function to compute and update graph data
     const updateGraph = useCallback(() => {
         if (!fgRef.current || !containerRef.current) {
             return;
@@ -535,42 +566,65 @@ const DataVisualization = () => {
         fgRef.current.graphData({ nodes, links });
     }, [allNodes, edgeData, getNodeColor, focusedNodeId]);
 
-    const toggleNodeType = (nodeType: string) => {
-        setSelectedNodeTypes(prev =>
-            prev.includes(nodeType)
-                ? prev.filter(t => t !== nodeType)
-                : [...prev, nodeType]
-        );
-    };
 
 
-    // Configure force simulation
     useEffect(() => {
-        if (fgRef.current) {
-            fgRef.current.d3Force('charge').strength(-1500);
+        if (fgRef.current && !showConnections) {
+            const nodeCount = allNodes.size;
+            
+            let chargeStrength, linkDistance, linkStrength, centerStrength;
+            
+            if (nodeCount <= 50) {
+                chargeStrength = -800;
+                linkDistance = 80;
+                linkStrength = 0.6;
+                centerStrength = 0.1;
+            } else if (nodeCount <= 200) {
+                chargeStrength = -400;
+                linkDistance = 60;
+                linkStrength = 0.4;
+                centerStrength = 0.05;
+            } else if (nodeCount <= 1000) {
+                chargeStrength = -200;
+                linkDistance = 40;
+                linkStrength = 0.2;
+                centerStrength = 0.02;
+            } else {
+                chargeStrength = -100;
+                linkDistance = 30;
+                linkStrength = 0.1;
+                centerStrength = 0.01;
+            }
+            
+            fgRef.current.d3Force('charge').strength(chargeStrength);
             fgRef.current.d3Force('link')
-                .distance(80)
-                .strength(0.6);
-            fgRef.current.d3Force('center').strength(0.02);
+                .distance(linkDistance)
+                .strength(linkStrength);
+            fgRef.current.d3Force('center').strength(centerStrength);
 
-            // Zoom to fit if this is the first load
             if (!hasZoomedRef.current) {
-                fgRef.current.zoomToFit(400, 300);
+                const padding = nodeCount > 1000 ? 100 : nodeCount > 500 ? 200 : 300;
+                setTimeout(() => {
+                    if (fgRef.current) {
+                        fgRef.current.zoomToFit(400, padding);
+                    }
+                }, 100);
                 hasZoomedRef.current = true;
             }
 
             // Gradually reduce forces for smoother animation
+            const settleTime = nodeCount > 500 ? 1000 : 2000;
             setTimeout(() => {
-                if (fgRef.current) {
-                    fgRef.current.d3Force('charge').strength(-800);
+                if (fgRef.current && !showConnections) {
+                    fgRef.current.d3Force('charge').strength(chargeStrength * 0.7);
                     fgRef.current.d3Force('link')
-                        .distance(100)
-                        .strength(0.4);
-                    fgRef.current.d3Force('center').strength(0.003);
+                        .distance(linkDistance * 1.2)
+                        .strength(linkStrength * 0.7);
+                    fgRef.current.d3Force('center').strength(centerStrength * 0.3);
                 }
-            }, 2000);
+            }, settleTime);
         }
-    }, [focusedNodeId]);
+    }, [focusedNodeId, allNodes.size, showConnections]);
 
     const expandNodeConnections = async (nodeId: string) => {
         if (!nodeId || loadingConnections) return;
@@ -634,6 +688,29 @@ const DataVisualization = () => {
 
             setAllNodes(currentNodes);
             setEdgeData(currentEdges);
+            
+            setTimeout(() => {
+                if (fgRef.current) {
+                    const nodeCount = currentNodes.size;
+                    
+                    let chargeStrength, linkDistance;
+                    if (nodeCount <= 500) {
+                        chargeStrength = -150;
+                        linkDistance = 30;
+                    } else {
+                        chargeStrength = -25;
+                        linkDistance = 5;
+                    }
+                    
+                    fgRef.current.d3Force('charge').strength(chargeStrength);
+                    fgRef.current.d3Force('link')
+                        .distance(linkDistance)
+                        .strength(1.0);
+                    fgRef.current.d3Force('center').strength(0.05);
+                    
+                    fgRef.current.d3ReheatSimulation();
+                }
+            }, 100);
 
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Failed to expand connections');
@@ -815,10 +892,32 @@ const DataVisualization = () => {
                 });
             }
 
-
             setAllNodes(connectedNodes);
             setEdgeData(allEdges);
             setShowConnections(true);
+            
+            setTimeout(() => {
+                if (fgRef.current) {
+                    const nodeCount = connectedNodes.size;
+                    
+                    let chargeStrength, linkDistance;
+                    if (nodeCount <= 500) {
+                        chargeStrength = -150;
+                        linkDistance = 30;
+                    } else {
+                        chargeStrength = -25;
+                        linkDistance = 5;
+                    }
+                    
+                    fgRef.current.d3Force('charge').strength(chargeStrength);
+                    fgRef.current.d3Force('link')
+                        .distance(linkDistance)
+                        .strength(1.0);
+                    fgRef.current.d3Force('center').strength(0.05);
+                    
+                    fgRef.current.d3ReheatSimulation();
+                }
+            }, 100);
 
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Failed to load connections');
@@ -990,14 +1089,12 @@ const DataVisualization = () => {
     };
 
     const clearGraph = () => {
-        setSelectedNodeTypes([]);
         setSelectedNodeLabel('');
         setShowAllNodes(false);
         setShowConnections(false);
         setAllNodes(new Map());
         setEdgeData([]);
         setFocusedNodeId(null);
-
     };
 
 
@@ -1042,6 +1139,20 @@ const DataVisualization = () => {
                         <Button onClick={clearGraph}>
                             <RotateCcw size={16} /> Clear
                         </Button>
+                        
+                        {allNodes.size > 0 && (
+                            <Button 
+                                variant="outline" 
+                                onClick={() => {
+                                    if (fgRef.current) {
+                                        const padding = allNodes.size > 1000 ? 100 : allNodes.size > 500 ? 200 : 300;
+                                        fgRef.current.zoomToFit(400, padding);
+                                    }
+                                }}
+                            >
+                                Fit View
+                            </Button>
+                        )}
 
                         {!selectedNodeLabel && (
                             <Button
@@ -1202,7 +1313,7 @@ const DataVisualization = () => {
                                 setFocusedNodeId(node.id);
                             }}
                             linkColor={() => "#6b7280"}
-                            linkWidth={2}
+                            linkWidth={0.5}
                             linkDirectionalParticles={(link: any) => {
                                 if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
                                 return 0;
@@ -1211,16 +1322,16 @@ const DataVisualization = () => {
                             linkDirectionalParticleSpeed={0.005}
                             linkDirectionalArrowLength={6}
                             linkDirectionalArrowRelPos={1}
-                            cooldownTicks={focusedNodeId ? 30 : 50}
-                            cooldownTime={focusedNodeId ? 3000 : 5000}
+                            cooldownTicks={focusedNodeId ? 30 : showConnections ? 100 : allNodes.size > 1000 ? 20 : 50}
+                            cooldownTime={focusedNodeId ? 3000 : showConnections ? 8000 : allNodes.size > 1000 ? 2000 : 5000}
                             backgroundColor="#1a1a1a"
-                            d3AlphaDecay={focusedNodeId ? 0.05 : 0.02}
-                            d3VelocityDecay={0.8}
-                            d3AlphaMin={0.001}
-                            warmupTicks={focusedNodeId ? 0 : 50}
+                            d3AlphaDecay={focusedNodeId ? 0.05 : allNodes.size > 1000 ? 0.05 : 0.02}
+                            d3VelocityDecay={allNodes.size > 1000 ? 0.9 : 0.8}
+                            d3AlphaMin={allNodes.size > 1000 ? 0.01 : 0.001}
+                            warmupTicks={focusedNodeId ? 0 : allNodes.size > 1000 ? 20 : 50}
                             enableNodeDrag={true}
-                            minZoom={0.01}
-                            maxZoom={100}
+                            minZoom={allNodes.size > 1000 ? 0.005 : 0.01}
+                            maxZoom={allNodes.size > 1000 ? 50 : 100}
                             onNodeDrag={(node: any) => {
                                 if (!isDraggingRef.current) {
                                     isDraggingRef.current = true;
