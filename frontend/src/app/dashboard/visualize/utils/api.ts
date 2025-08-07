@@ -6,7 +6,7 @@ import {
     NodeDetailsResponse 
 } from '../types';
 
-const API_BASE = 'http://127.0.0.1:8080';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8080';
 
 export const fetchSchema = async (): Promise<SchemaInfo> => {
     const response = await fetch(`${API_BASE}/api/schema`);
