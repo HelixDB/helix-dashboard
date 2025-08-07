@@ -33,3 +33,19 @@ Frontend:
 - Run `npm run dev` to start the frontend
 - The frontend will be available at `http://localhost:3000`
 
+## Visualizer Setup (TO BE CHANGED WHEN MERGED INTO DEV/MAIN)
+
+- FYI you may need to stop your current helixdb instance running on port 6969 then do the below:
+- Pull the `helix-db` repo from https://github.com/HelixDB/helix-db
+- Compile ur queries by running `helix compile` in the terminal where your queries and schema is located
+- Go into helix-db repo and change the branch from `main/dev` to `builtin-endpoints`
+- Drop in the `queries.rs` file into `helix-container/src` folder
+    - queries.rs is the that was made when you ran `helix compile`
+- Run `cd helix-container` then run `cargo run --profile dev --features dev-instance`
+- This will run on port 6969, and you may need to put in your data again.
+
+This is the **temporary work-around** until we merge the visualizer into main/dev. Apologies for the inconvenience.
+
+*NOTE*: 
+- In some browsers like Brave, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
+- I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
