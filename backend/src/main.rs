@@ -87,8 +87,11 @@ async fn main() -> anyhow::Result<()> {
                 .cloud_url
                 .as_ref()
                 .expect("Cloud URL is required for cloud mode");
-            let api_key = std::env::var("HELIX_API_KEY").ok();
-            Arc::new(HelixDB::new(Some(cloud_api_url), None, api_key.as_deref()))
+            let api_key = match std::env::var("HELIX_API_KEY") {
+                Ok(ref key) if !key.trim().is_empty() => key.clone(),
+                _ => panic!("HELIX_API_KEY environment variable is missing or empty. Please set it to a valid API key."),
+            };
+            Arc::new(HelixDB::new(Some(cloud_api_url), None, Some(api_key.as_str())))
         }
         _ => Arc::new(HelixDB::new(None, None, None)),
     };
