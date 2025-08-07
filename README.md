@@ -35,11 +35,12 @@ Frontend:
 
 ## Visualizer Setup (To be changed when merged into dev/main branch)
 
-*NOTE*: 
-- You may need to stop your current helixdb instance running on port 6969 then do the below:
-- In some browsers like Brave, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
+**NOTE**: 
+- You may need to stop your current helixdb instance running on port 6969
+- In some browsers like **Brave**, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
 - I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
 
+### Setup
 1. Pull the `helix-db` repo from https://github.com/HelixDB/helix-db
 2. Compile ur schema and queries by running `helix compile` in a terminal where your queries and schema is located
 3. Go into helix-db repo and change the branch from `main` to `builtin-endpoints`
