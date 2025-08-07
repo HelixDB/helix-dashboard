@@ -25,3 +25,4 @@ helixdb-cfg
 src/bin/ingest_medical_data.rs
 src/bin/introspect_client.rs
 .env
+src/bin/main.rs
