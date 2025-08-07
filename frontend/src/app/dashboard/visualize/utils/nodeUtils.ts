@@ -13,14 +13,11 @@ export const getNodeColor = (item: DataItem): string => {
     const colors = [
         '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4',
         '#ec4899', '#f97316', '#14b8a6', '#a855f7', '#eab308',
-        '#ef4444', '#22c55e', '#f472b6', '#8b5cf6', '#06b6d4',
-        '#f59e0b', '#ef4444', '#84cc16', '#0ea5e9', '#d946ef',
-        '#f97316', '#10b981', '#ec4899', '#14b8a6', '#a855f7',
-        '#eab308', '#6366f1', '#22d3ee', '#fb7185', '#fbbf24',
+        '#ef4444', '#22c55e', '#f472b6', '#84cc16', '#0ea5e9',
+        '#d946ef', '#6366f1', '#22d3ee', '#fb7185', '#fbbf24',
         '#34d399', '#c084fc', '#38bdf8', '#fde047', '#fb923c',
-        '#4ade80', '#f472b6', '#60a5fa', '#facc15', '#f87171',
-        '#34d399', '#a78bfa', '#22d3ee', '#fdba74', '#86efac',
-        '#c084fc', '#7dd3fc', '#fef08a', '#fca5a5', '#6ee7b7'
+        '#4ade80', '#60a5fa', '#facc15', '#f87171', '#a78bfa',
+        '#fdba74', '#86efac', '#7dd3fc', '#fef08a', '#fca5a5', '#6ee7b7'
     ];
 
     return colors[Math.abs(hash) % colors.length];
