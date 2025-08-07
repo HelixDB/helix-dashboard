@@ -5,7 +5,7 @@
 This is a dashboard for helixdb. It allows you to view and interact with your helixdb database.
 
 ![Dashboard](./public/dashboard.png)
-
+![Viz](./public/viz.png)
 
 ## Query Format
 
