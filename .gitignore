@@ -4,3 +4,4 @@ to_do
 
 .claude
 .DS_Store
+backend/.env
