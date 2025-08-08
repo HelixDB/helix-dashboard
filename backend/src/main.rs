@@ -48,6 +48,7 @@ struct AppState {
     helix_db: Arc<HelixDB>,
     data_source: DataSource,
     helix_url: String,
+    api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -89,17 +90,28 @@ async fn main() -> anyhow::Result<()> {
                 .expect("Cloud URL is required for cloud mode");
             let api_key = match std::env::var("HELIX_API_KEY") {
                 Ok(ref key) if !key.trim().is_empty() => key.clone(),
-                _ => panic!("HELIX_API_KEY environment variable is missing or empty. Please set it to a valid API key."),
+                _ => panic!(
+                    "HELIX_API_KEY environment variable is missing or empty. Please set it to a valid API key."
+                ),
             };
-            Arc::new(HelixDB::new(Some(cloud_api_url), None, Some(api_key.as_str())))
+            Arc::new(HelixDB::new(
+                Some(cloud_api_url.as_str()),
+                None,
+                Some(&api_key),
+            ))
         }
-        _ => Arc::new(HelixDB::new(None, None, None)),
+        DataSource::LocalIntrospect | DataSource::LocalFile => Arc::new(HelixDB::new(
+            Some("http://localhost"),
+            Some(args.port),
+            None,
+        )),
     };
 
     let app_state = AppState {
         helix_db: helix_db.clone(),
         data_source: args.source.clone(),
         helix_url,
+        api_key: std::env::var("HELIX_API_KEY").ok(),
     };
 
     let app = Router::new()
@@ -145,8 +157,20 @@ async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schema_pa
                 }
             }
         }
-        DataSource::LocalIntrospect | DataSource::Cloud => {
-            match fetch_cloud_introspect(&app_state.helix_url).await {
+        DataSource::LocalIntrospect => {
+            match fetch_cloud_introspect(&app_state.helix_url, None).await {
+                Ok(introspect_data) => Json(introspect_data.schema),
+                Err(e) => {
+                    eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
+                    Json(schema_parser::SchemaInfo {
+                        nodes: vec![],
+                        edges: vec![],
+                    })
+                }
+            }
+        }
+        DataSource::Cloud => {
+            match fetch_cloud_introspect(&app_state.helix_url, app_state.api_key.as_deref()).await {
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
                     eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
@@ -179,7 +203,8 @@ async fn execute_query_handler(
         _ => serde_json::Map::new(),
     };
 
-    let param_types = get_query_param_types(&app_state, &query_name).await;
+    let param_types =
+        get_query_param_types(&app_state, &query_name, app_state.api_key.as_deref()).await;
     for (key, value) in query_params {
         if !params.contains_key(&key) {
             let converted_value = if let Some(param_type) = param_types.get(&key) {
@@ -208,10 +233,11 @@ async fn execute_query_handler(
 async fn get_query_param_types(
     app_state: &AppState,
     query_name: &str,
+    api_key: Option<&str>,
 ) -> std::collections::HashMap<String, String> {
     let mut param_types = std::collections::HashMap::new();
 
-    match fetch_cloud_introspect(&app_state.helix_url).await {
+    match fetch_cloud_introspect(&app_state.helix_url, api_key.as_deref()).await {
         Ok(introspect_data) => {
             for query in introspect_data.queries {
                 if query.name == query_name {
@@ -321,7 +347,7 @@ async fn get_endpoints_handler(
             }
         }
         DataSource::LocalIntrospect | DataSource::Cloud => {
-            match fetch_cloud_introspect(&app_state.helix_url).await {
+            match fetch_cloud_introspect(&app_state.helix_url, app_state.api_key.as_deref()).await {
                 Ok(introspect_data) => {
                     let endpoints = introspect_data
                         .queries
@@ -392,11 +418,19 @@ struct CloudIntrospectData {
     queries: Vec<IntrospectQuery>,
 }
 
-async fn fetch_cloud_introspect(helix_url: &str) -> anyhow::Result<CloudIntrospectData> {
+async fn fetch_cloud_introspect(
+    helix_url: &str,
+    api_key: Option<&str>,
+) -> anyhow::Result<CloudIntrospectData> {
     let client = reqwest::Client::new();
     let url = format!("{}/introspect", helix_url);
+    let mut request = client.get(&url);
 
-    let response = client.get(&url).send().await?;
+    if let Some(api_key) = api_key {
+        request = request.header("x-api-key", api_key);
+    }
+
+    let response = request.send().await?;
 
     if !response.status().is_success() {
         anyhow::bail!("Failed to fetch introspect data: {}", response.status());
