@@ -537,7 +537,16 @@ async fn get_nodes_edges_handler(
         url.push_str(&query_params.join("&"));
     }
 
-    match reqwest::get(&url).await {
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url);
+
+    if matches!(app_state.data_source, DataSource::Cloud) {
+        if let Some(api_key) = app_state.api_key.as_deref() {
+            request = request.header("x-api-key", api_key);
+        }
+    }
+
+    match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
@@ -574,8 +583,16 @@ async fn get_node_details_handler(
     Query(params): Query<NodeDetailsQuery>,
 ) -> Json<serde_json::Value> {
     let url = format!("{}/node-details?id={}", app_state.helix_url, params.id);
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url);
 
-    match reqwest::get(&url).await {
+    if matches!(app_state.data_source, DataSource::Cloud) {
+        if let Some(api_key) = app_state.api_key.as_deref() {
+            request = request.header("x-api-key", api_key);
+        }
+    }
+
+    match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
@@ -627,7 +644,16 @@ async fn get_nodes_by_label_handler(
         url.push_str(&query_params.join("&"));
     }
 
-    match reqwest::get(&url).await {
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url);
+
+    if matches!(app_state.data_source, DataSource::Cloud) {
+        if let Some(api_key) = app_state.api_key.as_deref() {
+            request = request.header("x-api-key", api_key);
+        }
+    }
+
+    match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
@@ -668,7 +694,16 @@ async fn get_node_connections_handler(
         app_state.helix_url, params.node_id
     );
 
-    match reqwest::get(&url).await {
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url);
+
+    if matches!(app_state.data_source, DataSource::Cloud) {
+        if let Some(api_key) = app_state.api_key.as_deref() {
+            request = request.header("x-api-key", api_key);
+        }
+    }
+
+    match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
