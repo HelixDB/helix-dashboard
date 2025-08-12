@@ -38,6 +38,7 @@ const DataVisualization = () => {
     const [graphReady, setGraphReady] = useState(false);
     const [shouldZoomToFocus, setShouldZoomToFocus] = useState(false);
     const [isRepositioning, setIsRepositioning] = useState(false);
+    const [nodeSpacing, setNodeSpacing] = useState<number>(1);
 
     const {
         allNodes,
@@ -143,7 +144,7 @@ const DataVisualization = () => {
         graphEventHandlers.onZoom(zoomEvent, { zoomTimeoutRef, lastZoomRef });
     }, []);
 
-    // Apply force configuration when graph is ready
+    // Apply force configuration when graph is ready (without spacing)
     useEffect(() => {
         if (fgRef.current && graphReady) {
             const nodeCount = allNodes.size;
@@ -159,6 +160,37 @@ const DataVisualization = () => {
             }
         }
     }, [graphReady, allNodes.size, edgeData.length, focusedNodeId]);
+
+    useEffect(() => {
+        if (fgRef.current && graphReady && allNodes.size > 0) {
+            const nodeCount = allNodes.size;
+            const hasConnections = edgeData.length > 0;
+            const config = getForceConfig(nodeCount, hasConnections, focusedNodeId);
+
+            const adjustedChargeStrength = config.chargeStrength * (nodeSpacing * nodeSpacing);
+            const adjustedLinkDistance = config.linkDistance ? config.linkDistance * nodeSpacing : 100 * nodeSpacing;
+
+            fgRef.current.d3Force('charge').strength(adjustedChargeStrength);
+            fgRef.current.d3Force('link').distance(adjustedLinkDistance);
+
+            if (nodeSpacing < 1) {
+                fgRef.current.d3Force('center').strength(0.3 * (2 - nodeSpacing));
+                setTimeout(() => {
+                    if (fgRef.current) {
+                        fgRef.current.d3Force('center').strength(config.centerStrength);
+                    }
+                }, 1000);
+            }
+
+            fgRef.current.d3ReheatSimulation();
+
+            if (nodeSpacing < 1) {
+                fgRef.current.d3Force('charge').distanceMax(300 * nodeSpacing);
+            } else {
+                fgRef.current.d3Force('charge').distanceMax(Infinity);
+            }
+        }
+    }, [nodeSpacing]);
 
     // Apply connection-specific forces
     useEffect(() => {
@@ -229,7 +261,7 @@ const DataVisualization = () => {
                 // Center the camera on the node with zoom
                 fgRef.current.centerAt(focusedNode.x, focusedNode.y, 0); // Instant positioning (0ms)
                 fgRef.current.zoom(3, 0); // Instant zoom
-                
+
                 // Show the graph after positioning is complete
                 setTimeout(() => {
                     setIsRepositioning(false);
@@ -267,6 +299,8 @@ const DataVisualization = () => {
                         showConnections={showConnections}
                         error={error}
                         fgRef={fgRef}
+                        nodeSpacing={nodeSpacing}
+                        setNodeSpacing={setNodeSpacing}
                     />
 
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -289,7 +323,7 @@ const DataVisualization = () => {
                                 </div>
                             </div>
                         )}
-                        
+
                         <ForceGraph2D
                             ref={fgRef}
                             graphData={graphData}

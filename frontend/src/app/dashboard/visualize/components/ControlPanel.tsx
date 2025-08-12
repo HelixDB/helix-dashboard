@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -10,7 +11,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { GitBranch, RotateCcw, Check, ChevronDown } from 'lucide-react';
+import { GitBranch, RotateCcw, Check, ChevronDown, Maximize2 } from 'lucide-react';
 import { SchemaInfo } from '../types';
 
 interface ControlPanelProps {
@@ -31,6 +32,8 @@ interface ControlPanelProps {
     showConnections: boolean;
     error: string | null;
     fgRef: any;
+    nodeSpacing: number;
+    setNodeSpacing: (spacing: number) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -50,7 +53,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     loadingConnections,
     showConnections,
     error,
-    fgRef
+    fgRef,
+    nodeSpacing,
+    setNodeSpacing
 }) => {
     return (
         <div style={{ 
@@ -148,6 +153,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* Node Spacing Slider */}
+            <Button variant="outline" className="flex items-center gap-2 h-auto py-2 px-3" asChild>
+                <div>
+                    <Maximize2 size={16} />
+                    <span className="text-sm">Spacing:</span>
+                    <div className="w-32">
+                        <Slider
+                            value={[nodeSpacing]}
+                            onValueChange={(value) => setNodeSpacing(value[0])}
+                            min={0.5}
+                            max={3}
+                            step={0.1}
+                            className="cursor-pointer"
+                        />
+                    </div>
+                    <span className="text-sm font-mono min-w-[40px] text-right">
+                        {nodeSpacing.toFixed(1)}x
+                    </span>
+                </div>
+            </Button>
 
             {error && (
                 <div style={{ 
