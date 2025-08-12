@@ -51,3 +51,9 @@ Frontend:
 7. Run the frontend and backend using the steps above, then you can now use the visualizer.
 
 This is the **temporary work-around** until we merge the visualizer into main/dev. Apologies for the inconvenience.
+
+### Troubleshooting
+1. Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+![alt text](./public/problem_1.png)
+* remove "--turbopack" in package.json and restart frontend
+* if the issue still cannot be resolved, you can refer to [this link](https://github.com/vercel/next.js/discussions/61886)
