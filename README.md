@@ -41,7 +41,7 @@ Frontend:
 - I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
 
 ### Setup (Mac)
-1. Go into an IDE or terminal, then open/cd to your user (home) directory and do `Command + Shift + .` or cd into the .helix folder
+1. Go into an IDE or terminal, then open/cd to your user (home) directory and do `Command + Shift + .` or cd into the `.helix/repo/helix-db` folder
 2. Change the branch to `dev`
 3. Then `cd helix-cli` and run `sh build.sh dev`
 4. You can now deploy your existing instance using `helix deploy -c <cluster_id> --dev`
