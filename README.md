@@ -33,21 +33,21 @@ Frontend:
 2. Run `npm run dev` to start the frontend
 3. The frontend will be available at `http://localhost:3000`
 
-## Visualizer Setup (To be changed when merged into dev/main branch)
+## Visualizer Setup
 
 **NOTE**: 
 - You may need to stop your current helixdb instance running on port 6969
 - In some browsers like **Brave**, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
 - I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
 
-### Setup
-1. Pull the `helix-db` repo from https://github.com/HelixDB/helix-db
-2. Compile ur schema and queries by running `helix compile` in a terminal where your queries and schema is located
-3. Go into helix-db repo and change the branch from `main` to `builtin-endpoints`
-4. Drop in the `queries.rs` file into `helix-container/src` folder
-    - queries.rs is file that was made when you ran `helix compile`
-5. In your terminal inside `helix-db` repo, run `cd helix-container` then run `cargo run --profile dev --features dev-instance`
-6. This will run your helixdb instance on port 6969, and you may need to put in your data again.
-7. Run the frontend and backend using the steps above, then you can now use the visualizer.
+### Setup (Mac)
+1. Go into an IDE or terminal, then open/cd to your user (home) directory and do `Command + Shift + .` or cd into the .helix folder
+2. Change the branch to `dev`
+3. Then `cd helix-cli` and run `sh build.sh dev`
+4. You can now deploy your existing instance using `helix deploy -c <cluster_id> --dev`
+5. Run the frontend and backend, then you can now use the visualizer.
 
-This is the **temporary work-around** until we merge the visualizer into main/dev. Apologies for the inconvenience.
+**Don't forget that your HelixDB is now on the dev branch, and when you want to update to a newer version of helix you need to git pull in the branch and run the same command. Or you can change back the branch to main**
+
+### Setup (Windows)
+1. Same as Mac, I'm not sure where the .helix folder resides in Windows tho
