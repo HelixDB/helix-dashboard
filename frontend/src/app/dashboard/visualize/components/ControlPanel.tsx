@@ -31,7 +31,6 @@ interface ControlPanelProps {
     loadingConnections: boolean;
     showConnections: boolean;
     error: string | null;
-    fgRef: any;
     nodeSpacing: number;
     setNodeSpacing: (spacing: number) => void;
 }
@@ -53,7 +52,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     loadingConnections,
     showConnections,
     error,
-    fgRef,
     nodeSpacing,
     setNodeSpacing
 }) => {

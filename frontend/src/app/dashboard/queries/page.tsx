@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState, useEffect, useRef } from "react"
+import { Fragment, useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
@@ -24,7 +24,7 @@ import {
     SidebarProvider,
     SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Send, Copy, Download, ArrowLeft, Play, Search, Filter, X, Plus, Edit2, CheckSquare, Square, Users, SquarePen, Check, FileText, RefreshCw, ChevronDown, ChevronRight } from "lucide-react"
+import { Send, Copy, Download, ArrowLeft, Search, Filter, X, Plus, Edit2, CheckSquare, Square, SquarePen, FileText, RefreshCw, ChevronDown, ChevronRight } from "lucide-react"
 import { getEndpoints, clearEndpointsCache, convertParamValue } from "@/utils/endpoints"
 import { JsonTable } from "@/components/json-table"
 import { OptimizedJsonViewer } from "@/components/optimized-json-viewer"
@@ -83,6 +83,7 @@ interface EndpointConfig {
     url: string;
     description: string;
     params: Parameter[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body?: any;
 }
 
@@ -462,7 +463,7 @@ export default function QueriesPage() {
     }
 
     // Create a new tab for a query
-    const createTab = (endpointKey: string): QueryTab => {
+    const createTab = useCallback( (endpointKey: string): QueryTab => {
         const endpoint = endpoints[endpointKey]
         const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
@@ -481,10 +482,10 @@ export default function QueriesPage() {
             loading: false,
             status: null
         }
-    }
+    }, [endpoints, endpointMethods])
 
     // Open a query in a new tab
-    const openInNewTab = (endpointKey: string, switchToTab = true) => {
+    const openInNewTab = useCallback( (endpointKey: string, switchToTab = true) => {
         const newTab = createTab(endpointKey)
         setOpenTabs(prev => [...prev, newTab])
         if (switchToTab) {
@@ -492,7 +493,7 @@ export default function QueriesPage() {
             router.push(`/dashboard/queries?tab=${newTab.id}`)
         }
         return newTab
-    }
+    }, [createTab, router])
 
     // Close a tab
     const closeTab = (tabId: string) => {
@@ -537,7 +538,7 @@ export default function QueriesPage() {
                 router.push('/dashboard/queries')
             }
         }
-    }, [activeTabId, openTabs.length])
+    }, [activeTabId, openTabs.length, router, searchParams, selectedEndpoint])
 
     // Handle URL parameters for tab management
     useEffect(() => {
@@ -563,15 +564,9 @@ export default function QueriesPage() {
         } else {
             setActiveTabId(null)
         }
-    }, [selectedEndpoint, searchParams, openTabs])
+    }, [selectedEndpoint, endpoints, searchParams, openTabs, openInNewTab])
 
-    useEffect(() => {
-        if (selectedEndpoint && endpoints[selectedEndpoint] && !searchParams.get('tab')) {
-            updateEndpoint(selectedEndpoint)
-        }
-    }, [selectedEndpoint])
-
-    const updateEndpoint = (endpointKey: string) => {
+    const updateEndpoint = useCallback( (endpointKey: string) => {
         const endpoint = endpoints[endpointKey]
         if (!endpoint) return
 
@@ -584,7 +579,13 @@ export default function QueriesPage() {
         setBody(endpoint.body ? JSON.stringify(endpoint.body, null, 2) : "")
         setResponse("")
         setStatus(null)
-    }
+    }, [endpoints, endpointMethods, setMethod, setUrl, setParams, setBody, setResponse, setStatus])
+
+    useEffect(() => {
+        if (selectedEndpoint && endpoints[selectedEndpoint] && !searchParams.get('tab')) {
+            updateEndpoint(selectedEndpoint)
+        }
+    }, [selectedEndpoint, endpoints, endpointMethods, updateEndpoint, searchParams])
 
     const handleEndpointSelect = (endpointKey: string) => {
         // Always create a new tab when selecting an endpoint
@@ -626,8 +627,9 @@ export default function QueriesPage() {
         if (!endpoint) return currentBody
 
         if (!currentBody.trim()) {
-            const nonEmptyParams = Object.entries(currentParams).filter(([_, value]) => value.trim() !== '')
+            const nonEmptyParams = Object.entries(currentParams).filter(([, value]) => value.trim() !== '')
             if (nonEmptyParams.length > 0) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const paramsObject: Record<string, any> = {}
                 nonEmptyParams.forEach(([key, value]) => {
                     const param = endpoint.params.find(p => p.name === key)
@@ -659,7 +661,7 @@ export default function QueriesPage() {
             })
 
             return JSON.stringify(bodyObj, null, 2)
-        } catch (e) {
+        } catch {
             return currentBody
         }
     }
@@ -1266,7 +1268,7 @@ export default function QueriesPage() {
                                             <p className="text-sm mb-4">Unable to connect to the backend server</p>
                                             <div className="space-y-2 text-xs">
                                                 <p>Make sure the backend server is running on <code className="bg-muted px-1 rounded">http://127.0.0.1:8080</code></p>
-                                                <p>Then click the "Refresh Endpoints" button above</p>
+                                                <p>Then click the {"Refresh Endpoints"} button above</p>
                                             </div>
                                         </div>
                                     ) : (
