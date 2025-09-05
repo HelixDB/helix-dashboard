@@ -32,10 +32,12 @@ export const getForceConfig = (nodeCount: number, hasConnections: boolean, focus
     return INITIAL_CONFIG;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getConnectionForceConfig = (nodeCount: number): ForceConfig => {
     return CONNECTED_CONFIG;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getInitialForceConfig = (nodeCount: number): ForceConfig => {
     return INITIAL_CONFIG;
 };
@@ -56,14 +58,17 @@ export const getDragForceConfig = () => {
     };
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getZoomPadding = (nodeCount: number): number => {
     return 200;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getSettleTime = (nodeCount: number): number => {
     return 1500;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getCooldownConfig = (focusedNodeId: string | null, showConnections: boolean, nodeCount: number) => {
     return {
         cooldownTicks: focusedNodeId ? 30 : showConnections ? 100 : 50,
@@ -75,6 +80,7 @@ export const getCooldownConfig = (focusedNodeId: string | null, showConnections:
     };
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getGraphLimits = (nodeCount: number) => {
     return {
         minZoom: 0.01,

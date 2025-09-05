@@ -28,10 +28,12 @@ interface JsonTableProps {
     data: string
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const globalFilterFn: FilterFn<any> = (row, _columnId, value) => {
     const search = value.toLowerCase()
     const rowData = row.original
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const searchInObject = (obj: any): boolean => {
         if (obj === null || obj === undefined) return false
 
@@ -64,6 +66,7 @@ export function JsonTable({ data }: JsonTableProps) {
     const { parsedData, columns } = useMemo(() => {
         try {
             const parsed = JSON.parse(data)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let tableData: any[] = []
 
             if (Array.isArray(parsed)) {
@@ -93,6 +96,7 @@ export function JsonTable({ data }: JsonTableProps) {
                 return 0
             })
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cols: ColumnDef<any>[] = sortedKeys.map((key) => ({
                 accessorKey: key,
                 header: ({ column }) => {

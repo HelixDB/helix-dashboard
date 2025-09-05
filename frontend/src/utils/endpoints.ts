@@ -20,6 +20,7 @@ interface EndpointConfig {
         required: boolean;
         description: string;
     }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body?: any;
 }
 
@@ -47,9 +48,10 @@ function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
         type: 'query',
         param_type: param.param_type,
         required: true,
-        description: generateParamDescription(param.name, param.param_type)
+        description: generateParamDescription(param.name)
     }));
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let body: any = undefined;
     if (apiEndpoint.method === 'POST' || apiEndpoint.method === 'PUT') {
         body = {};
@@ -84,7 +86,7 @@ function extractEntityName(queryName: string): string {
         .replace(/s$/, '') || 'entity';
 }
 
-function generateParamDescription(paramName: string, paramType: string): string {
+function generateParamDescription(paramName: string): string {
     if (paramName.endsWith('_id') || paramName === 'id') {
         const entityName = paramName.replace('_id', '').replace(/([A-Z])/g, ' $1').toLowerCase();
         return `${entityName.charAt(0).toUpperCase()}${entityName.slice(1)} identifier`;
@@ -99,6 +101,7 @@ function generateParamDescription(paramName: string, paramType: string): string 
     return `${readable.charAt(0).toUpperCase()}${readable.slice(1)} value`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getDefaultValueForType(paramType: string): any {
     const normalizedType = paramType.toLowerCase();
 
@@ -123,6 +126,7 @@ function getDefaultValueForType(paramType: string): any {
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function convertParamValue(value: string, paramType: string): any {
     if (!value.trim()) {
         return getDefaultValueForType(paramType);

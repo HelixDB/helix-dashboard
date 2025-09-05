@@ -14,6 +14,7 @@ import {
 
 export const useGraphData = () => {
     const [allNodes, setAllNodes] = useState<Map<string, DataItem>>(new Map());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [edgeData, setEdgeData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export const useGraphData = () => {
                 setSchema(data);
             }
             setLoadingSchema(false);
-        } catch (error) {
+        } catch {
             const discoveredSchema = await discoverNodeTypesFromData();
             setSchema(discoveredSchema);
             setLoadingSchema(false);
@@ -98,6 +99,7 @@ export const useGraphData = () => {
 
             const connectedNodesData = connections.connected_nodes || [];
             if (Array.isArray(connectedNodesData)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 connectedNodesData.forEach((node: any) => {
                     if (node.id && !currentNodes.has(node.id)) {
                         currentNodes.set(node.id, node);
@@ -105,8 +107,10 @@ export const useGraphData = () => {
                 });
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const processEdges = (edges: any[], isIncoming: boolean) => {
                 if (Array.isArray(edges)) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     edges.forEach((edge: any) => {
                         if (edge.id && !existingEdgeIds.has(edge.id)) {
                             const processedEdge = {
@@ -154,6 +158,7 @@ export const useGraphData = () => {
 
         try {
             const existingNodeIds = Array.from(allNodes.keys());
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const allEdges: any[] = [];
             const connectedNodes = new Map(allNodes);
             const newNodeIds = new Set<string>();
@@ -166,7 +171,7 @@ export const useGraphData = () => {
                     try {
                         const connections = await fetchNodeConnections(nodeId);
                         return { nodeId, connections };
-                    } catch (error) {
+                    } catch {
                         return null;
                     }
                 });
@@ -180,6 +185,7 @@ export const useGraphData = () => {
                     const connectedNodesData = connections.connected_nodes || [];
 
                     if (Array.isArray(connectedNodesData)) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         connectedNodesData.forEach((node: any) => {
                             if (node.id && !connectedNodes.has(node.id)) {
                                 connectedNodes.set(node.id, node);
@@ -188,8 +194,10 @@ export const useGraphData = () => {
                         });
                     }
 
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const processEdges = (edges: any[], isIncoming: boolean) => {
                         if (Array.isArray(edges)) {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             edges.forEach((edge: any) => {
                                 const processedEdge = {
                                     from_node: isIncoming
@@ -262,7 +270,7 @@ export const useGraphData = () => {
         if (schema.nodes.length >= 0 && !isClearing) { // Only load once schema is loaded and not clearing
             loadNodes(); // This will use the current state values
         }
-    }, [selectedNodeLabel, showAllNodes, topK, schema.nodes.length, isClearing]);
+    }, [selectedNodeLabel, showAllNodes, topK, schema.nodes.length, isClearing, loadNodes]);
 
     return {
         allNodes,

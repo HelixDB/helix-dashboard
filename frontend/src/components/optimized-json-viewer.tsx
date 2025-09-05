@@ -35,7 +35,8 @@ const JsonValue = ({ value, rawValue }: { value: string; rawValue: string }) => 
 }
 
 // Collapsible array component with pagination
-const CollapsibleArray = ({ items, name }: { items: any[]; name?: string }) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CollapsibleArray = ({ items }: { items: any[] }) => {
     const [isExpanded, setIsExpanded] = useState(false)
     const [loadedCount, setLoadedCount] = useState(100)
     
@@ -91,6 +92,7 @@ const CollapsibleArray = ({ items, name }: { items: any[]; name?: string }) => {
 }
 
 // Collapsible object component
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: string }) => {
     const [isExpanded, setIsExpanded] = useState(name === undefined) // Root object expanded by default
     
@@ -118,7 +120,7 @@ const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: str
                 <div className="ml-4 mt-1">
                     {entries.map(([key, value], index) => (
                         <div key={key} className="my-0.5">
-                            <span style={{ color: '#7E9CD8' }}>"{key}":</span>
+                            <span style={{ color: '#7E9CD8' }}>{`"${key}":`}</span>
                             <span className="ml-2">
                                 <JsonNode value={value} />
                                 {index < entries.length - 1 && <span>,</span>}
@@ -132,6 +134,7 @@ const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: str
 }
 
 // Main node renderer
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const JsonNode = ({ value }: { value: any }) => {
     if (value === null) {
         return <span className="text-gray-500">null</span>
@@ -175,7 +178,7 @@ const JsonNode = ({ value }: { value: any }) => {
     return <span>{String(value)}</span>
 }
 
-export function OptimizedJsonViewer({ data, maxInitialItems = 100 }: OptimizedJsonViewerProps) {
+export function OptimizedJsonViewer({ data}: OptimizedJsonViewerProps) {
     const [copyAll, setCopyAll] = useState(false)
     
     const parsedData = useMemo(() => {

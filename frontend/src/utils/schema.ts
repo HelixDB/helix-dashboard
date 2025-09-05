@@ -35,6 +35,7 @@ class SchemaService {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async executeQuery(queryName: string): Promise<any> {
         try {
             const response = await fetch(`${this.baseUrl}/query/${queryName}`);

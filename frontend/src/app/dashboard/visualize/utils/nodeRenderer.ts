@@ -5,6 +5,7 @@ interface NodeRendererOptions {
     hoveredNodeId: string | null;
     focusedNodeId: string | null;
     expandedNodes: Set<string>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fgRef: any;
 }
 
@@ -54,12 +55,14 @@ const calculateCardDimensions = (
     node: GraphNode,
     ctx: CanvasRenderingContext2D,
     expandedNodes: Set<string>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     focusedNodeId: string | null
 ) => {
     const data = node.originalData as DataItem;
     const label = data.label || 'Entity';
     
     // Build fields array with title renamed to ID
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fieldsArray: [string, any][] = [];
     
     // Add title as ID first if it exists
@@ -173,6 +176,7 @@ const drawDetailedNode = (
     const label = data.label || 'Entity';
     
     // Build fields array with title renamed to ID
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fieldsArray: [string, any][] = [];
     
     // Add title as ID first if it exists
@@ -189,6 +193,7 @@ const drawDetailedNode = (
     
     const isExpanded = expandedNodes.has(node.id);
     const fields = isExpanded ? fieldsArray : fieldsArray.slice(0, 5);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const isFocused = focusedNodeId === node.id;
 
     const padding = 12;

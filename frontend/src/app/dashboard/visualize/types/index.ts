@@ -3,6 +3,7 @@ export interface DataItem {
     label?: string;
     name?: string;
     title?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
 }
 
@@ -24,7 +25,9 @@ export interface SchemaInfo {
 export interface NodesEdgesResponse {
     data: {
         nodes: DataItem[];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         edges: any[];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vectors: any[];
     };
     stats?: {
@@ -75,7 +78,9 @@ export interface GraphData {
 
 export interface ConnectionData {
     connected_nodes?: DataItem[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     incoming_edges?: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     outgoing_edges?: any[];
 }
 
@@ -83,5 +88,6 @@ export interface NodeDetailsResponse {
     found?: boolean;
     node?: DataItem;
     data?: DataItem;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
 }

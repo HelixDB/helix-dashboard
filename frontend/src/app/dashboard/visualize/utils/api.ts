@@ -73,7 +73,7 @@ export const fetchNodeDetailsForNodes = async (
             try {
                 const details = await fetchNodeDetails(nodeId);
                 return { nodeId, details };
-            } catch (error) {
+            } catch {
                 return null;
             }
         });
@@ -132,7 +132,7 @@ export const discoverNodeTypesFromData = async (): Promise<SchemaInfo> => {
                 if (nodeData && nodeData.label) {
                     nodeTypes.add(nodeData.label);
                 }
-            } catch (error) {
+            } catch {
                 continue;
             }
         }
@@ -141,7 +141,7 @@ export const discoverNodeTypesFromData = async (): Promise<SchemaInfo> => {
             nodes: Array.from(nodeTypes).map(type => ({ name: type, properties: [] })),
             edges: []
         };
-    } catch (error) {
+    } catch {
         return { nodes: [], edges: [] };
     }
 };

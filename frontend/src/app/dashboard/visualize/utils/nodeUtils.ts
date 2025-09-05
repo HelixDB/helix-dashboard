@@ -23,6 +23,7 @@ export const getNodeColor = (item: DataItem): string => {
     return colors[Math.abs(hash) % colors.length];
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const formatFieldType = (key: string, value: any): string => {
     if (key === 'id' || key.endsWith('_id')) return 'ID';
     if (typeof value === 'number') return Number.isInteger(value) ? 'I32' : 'F64';
