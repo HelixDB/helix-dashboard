@@ -63,9 +63,13 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
 
+    // Use host.docker.internal when running in Docker, localhost otherwise
+    let host = std::env::var("DOCKER_HOST_INTERNAL")
+        .unwrap_or_else(|_| "localhost".to_string());
+
     let helix_url = match args.source {
         DataSource::LocalIntrospect => {
-            let url = format!("http://localhost:{}", args.port);
+            let url = format!("http://{}:{}", host, args.port);
             println!("Starting server in local-introspect mode");
             println!(
                 "Using local HelixDB introspect endpoint: {}/introspect",
@@ -76,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
         DataSource::LocalFile => {
             println!("Starting server in local-file mode");
             println!("Reading from local helixdb-cfg files");
-            format!("http://localhost:{}", args.port)
+            format!("http://{}:{}", host, args.port)
         }
         DataSource::Cloud => {
             let url = args
@@ -115,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         DataSource::LocalIntrospect | DataSource::LocalFile => Arc::new(HelixDB::new(
-            Some("http://localhost"),
+            Some(&format!("http://{}", host)),
             Some(args.port),
             None,
         )),
@@ -147,9 +151,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", DEFAULT_PORT)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", DEFAULT_PORT)).await?;
 
-    println!("Server running on http://127.0.0.1:{}", DEFAULT_PORT);
+    println!("Server running on http://0.0.0.0:{}", DEFAULT_PORT);
     axum::serve(listener, app).await?;
 
     Ok(())
