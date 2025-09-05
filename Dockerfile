@@ -8,7 +8,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Copy frontend source
 COPY frontend/ ./
@@ -16,28 +16,29 @@ COPY frontend/ ./
 # Build the frontend
 RUN npm run build
 
-# Stage 2: Build the backend (optimized for speed)
+# Stage 2: Build the backend
 FROM rustlang/rust:nightly-alpine AS backend-builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
+ENV CARGO_BUILD_JOBS=4
 
 WORKDIR /app/backend
 
-# Copy Cargo files first for better caching
+# Copy Cargo files for better caching
 COPY backend/Cargo.toml backend/Cargo.lock ./
 
 # Create dummy src to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies in debug mode (much faster than release)
+# Build dependencies
 RUN cargo build
 RUN rm src/main.rs
 
 # Copy actual source code
 COPY backend/src ./src
 
-# Build the actual application in debug mode
+# Build the actual application
 RUN touch src/main.rs && cargo build
 
 # Stage 3: Runtime image
@@ -60,8 +61,8 @@ RUN mkdir -p ./public
 COPY --from=backend-builder /app/backend/target/debug/backend ./backend
 
 # Copy the entrypoint script
-COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
 
 # Create helixdb-cfg directory for configuration files
 RUN mkdir -p helixdb-cfg
@@ -75,4 +76,4 @@ ENV BACKEND_PORT=8080
 ENV DOCKER_HOST_INTERNAL=host.docker.internal
 
 # Start both services
-CMD ["./docker-entrypoint.sh"]
+CMD ["./start.sh"]
