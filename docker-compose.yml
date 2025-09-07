@@ -1,0 +1,17 @@
+services:
+  helix-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"  # Frontend
+      - "8080:8080"  # Backend API
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BACKEND_PORT=8080
+    volumes:
+      # Mount helixdb-cfg directory if you have local config files
+      - ./helixdb-cfg:/app/helixdb-cfg:ro
+    restart: unless-stopped
+    container_name: helix-dashboard

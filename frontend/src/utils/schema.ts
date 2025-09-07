@@ -17,7 +17,7 @@ export interface SchemaInfo {
 }
 
 class SchemaService {
-    private baseUrl = 'http://127.0.0.1:8080/api';
+    private baseUrl = 'http://localhost:8080/api';
 
     async getSchema(): Promise<SchemaInfo> {
         try {
@@ -35,6 +35,7 @@ class SchemaService {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async executeQuery(queryName: string): Promise<any> {
         try {
             const response = await fetch(`${this.baseUrl}/query/${queryName}`);

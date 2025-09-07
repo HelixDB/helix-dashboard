@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
     Breadcrumb,
@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,7 +21,7 @@ import {
     SidebarProvider,
     SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Search, Filter, TrendingUp, Clock, AlertTriangle, BarChart3, Activity, X, RefreshCw } from "lucide-react"
+import { Search, Filter, TrendingUp, Clock, AlertTriangle, BarChart3, Activity, RefreshCw } from "lucide-react"
 import * as d3 from "d3"
 import { getEndpoints, clearEndpointsCache } from "@/utils/endpoints"
 
@@ -238,7 +237,7 @@ const LineChart = ({ data, title, yLabel, color, height = 200, timePeriod = "1" 
         }
 
         // Add dots for data points (only for non-zero values)
-        let nonZeroData = data.filter(d => d.value > 0)
+        const nonZeroData = data.filter(d => d.value > 0)
 
         let actualData = []
 
@@ -280,13 +279,6 @@ const LineChart = ({ data, title, yLabel, color, height = 200, timePeriod = "1" 
             .y((d: { timestamp: Date; value: number }) => yScale(d.value))
             .curve(d3.curveMonotoneX)
 
-        // Area generator for gradient fill
-        const area = d3.area<{ timestamp: Date; value: number }>()
-            .x((d: { timestamp: Date; value: number }) => xScale(d.timestamp))
-            .y0(chartHeight)
-            .y1((d: { timestamp: Date; value: number }) => yScale(d.value))
-            .curve(d3.curveMonotoneX)
-
         // Create unique gradient ID based on title and color to avoid conflicts
         const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '')
         const safeColor = color.replace(/[^a-zA-Z0-9]/g, '')
@@ -324,14 +316,6 @@ const LineChart = ({ data, title, yLabel, color, height = 200, timePeriod = "1" 
             .attr("height", chartHeight)
             .attr("x", 0)
             .attr("y", 0)
-
-        // Add area with gradient fill
-        const areaPath = g.append("path")
-            .datum(actualData)
-            .attr("fill", `url(#${gradientId})`)
-            .attr("d", area)
-            .attr("clip-path", `url(#${clipId})`)
-            .attr("opacity", 0.8)
 
         // Add line
         const path = g.append("path")
@@ -438,7 +422,7 @@ const LineChart = ({ data, title, yLabel, color, height = 200, timePeriod = "1" 
 
         // Animate dots from left to right following the line
         dots.transition()
-            .delay((d: { timestamp: Date; value: number }, i: number) => {
+            .delay((d: { timestamp: Date; value: number }) => {
                 // Calculate delay based on position along x-axis
                 const xPosition = xScale(d.timestamp)
                 const maxX = chartWidth
@@ -486,6 +470,7 @@ export default function AnalyticsPage() {
     const [chartViewMode, setChartViewMode] = useState<"average" | string>("average")
 
     // Dynamic endpoints state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [endpoints, setEndpoints] = useState<Record<string, any>>({})
     const [endpointsLoading, setEndpointsLoading] = useState(true)
     const [endpointsError, setEndpointsError] = useState<string | null>(null)
@@ -515,7 +500,7 @@ export default function AnalyticsPage() {
     const [metricsData, setMetricsData] = useState<Record<string, QueryMetrics>>({})
 
     // Load endpoints from backend
-    const loadEndpoints = async () => {
+    const loadEndpoints = useCallback(async () => {
         setEndpointsLoading(true)
         setEndpointsError(null)
         try {
@@ -540,7 +525,7 @@ export default function AnalyticsPage() {
         } finally {
             setEndpointsLoading(false)
         }
-    }
+    }, [selectedQueries])
 
     // Refresh endpoints by clearing cache and reloading
     const refreshEndpoints = async () => {
@@ -551,10 +536,11 @@ export default function AnalyticsPage() {
     // Load endpoints on mount
     useEffect(() => {
         loadEndpoints()
-    }, [])
+    }, [loadEndpoints])
 
     // Generate full 36-hour dataset when selected queries change
     useEffect(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const newFullMetricsData: Record<string, any> = {}
 
         selectedQueries.forEach(queryKey => {
@@ -570,7 +556,7 @@ export default function AnalyticsPage() {
                 ...newFullMetricsData
             }))
         }
-    }, [selectedQueries])
+    }, [selectedQueries, fullMetricsData])
 
     // Filter data based on selected time period
     useEffect(() => {
@@ -856,7 +842,7 @@ export default function AnalyticsPage() {
                                                 <p className="text-sm mb-4">Unable to connect to the backend server</p>
                                                 <div className="space-y-2 text-xs">
                                                     <p>Make sure the backend server is running on <code className="bg-muted px-1 rounded">http://127.0.0.1:8080</code></p>
-                                                    <p>Then click the "Refresh Endpoints" button above</p>
+                                                    <p>Then click the {"Refresh Endpoints"} button above</p>
                                                 </div>
                                             </div>
                                         ) : (

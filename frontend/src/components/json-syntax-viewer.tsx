@@ -101,7 +101,7 @@ export function JsonSyntaxViewer({ data }: JsonSyntaxViewerProps) {
                         return <span key={index}>{token.value}</span>
                 }
             })
-        } catch (e) {
+        } catch {
             // Fallback for invalid JSON
             return (
                 <pre

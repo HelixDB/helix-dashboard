@@ -5,6 +5,7 @@ interface GraphEventHandlers {
         node: GraphNode,
         event: MouseEvent,
         options: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             fgRef: any;
             expandedNodes: Set<string>;
             setExpandedNodes: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -21,6 +22,7 @@ interface GraphEventHandlers {
     onNodeDrag: (
         node: GraphNode,
         options: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             fgRef: any;
             isDraggingRef: React.RefObject<boolean>;
         }
@@ -29,6 +31,7 @@ interface GraphEventHandlers {
     onNodeDragEnd: (
         node: GraphNode,
         options: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             fgRef: any;
             isDraggingRef: React.RefObject<boolean>;
         }
@@ -37,7 +40,9 @@ interface GraphEventHandlers {
     onBackgroundClick: (
         options: {
             setFocusedNodeId: (id: string | null) => void;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             pendingFocusRef: React.RefObject<any>;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             fgRef: any;
         }
     ) => void;
@@ -53,7 +58,7 @@ interface GraphEventHandlers {
 
 export const graphEventHandlers: GraphEventHandlers = {
     onNodeClick: (node, event, options) => {
-        const { fgRef, expandedNodes, setExpandedNodes, expandNodeConnections, setFocusedNodeId, pendingFocusRef, setShouldZoomToFocus } = options;
+        const { fgRef, setExpandedNodes, expandNodeConnections, setFocusedNodeId, setShouldZoomToFocus } = options;
 
         const canvas = event.target as HTMLCanvasElement;
         const rect = canvas.getBoundingClientRect();

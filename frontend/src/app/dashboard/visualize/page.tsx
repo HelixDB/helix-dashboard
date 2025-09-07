@@ -25,6 +25,7 @@ import { GraphNode, GraphLink } from './types';
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
 const DataVisualization = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fgRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
@@ -122,7 +123,7 @@ const DataVisualization = () => {
             pendingFocusRef,
             setShouldZoomToFocus
         });
-    }, [expandedNodes, expandNodeConnections]);
+    }, [expandedNodes, expandNodeConnections, setFocusedNodeId]);
 
     const handleNodeDrag = useCallback((node: GraphNode) => {
         graphEventHandlers.onNodeDrag(node, { fgRef, isDraggingRef });
@@ -138,7 +139,7 @@ const DataVisualization = () => {
             pendingFocusRef,
             fgRef
         });
-    }, []);
+    }, [setFocusedNodeId]);
 
     const handleZoom = useCallback((zoomEvent: { k: number }) => {
         graphEventHandlers.onZoom(zoomEvent, { zoomTimeoutRef, lastZoomRef });
@@ -190,7 +191,7 @@ const DataVisualization = () => {
                 fgRef.current.d3Force('charge').distanceMax(Infinity);
             }
         }
-    }, [nodeSpacing]);
+    }, [nodeSpacing, allNodes.size, edgeData.length, focusedNodeId, graphReady]);
 
     // Apply connection-specific forces
     useEffect(() => {
@@ -249,6 +250,7 @@ const DataVisualization = () => {
         if (!fgRef.current || !focusedNodeId || !graphData || !shouldZoomToFocus) return;
 
         // Find the focused node in the current graph data
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const focusedNode = graphData.nodes.find((n: any) => n.id === focusedNodeId);
         if (!focusedNode) return;
 
@@ -298,7 +300,6 @@ const DataVisualization = () => {
                         loadingConnections={loadingConnections}
                         showConnections={showConnections}
                         error={error}
-                        fgRef={fgRef}
                         nodeSpacing={nodeSpacing}
                         setNodeSpacing={setNodeSpacing}
                     />
@@ -340,17 +341,23 @@ const DataVisualization = () => {
                                     fgRef
                                 })
                             }
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) =>
                                 nodePointerAreaPaint(node as GraphNode, color, ctx)
                             }
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             onNodeHover={(node: any) => setHoveredNodeId(node ? node.id : null)}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             onNodeClick={(node: any, event: MouseEvent) => handleNodeClick(node as GraphNode, event)}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             onNodeDrag={(node: any) => handleNodeDrag(node as GraphNode)}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             onNodeDragEnd={(node: any) => handleNodeDragEnd(node as GraphNode)}
                             onBackgroundClick={handleBackgroundClick}
                             onZoom={handleZoom}
                             linkColor={() => "#6b7280"}
                             linkWidth={0.5}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             linkDirectionalParticles={(link: any) => {
                                 if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) return 2;
                                 return 0;

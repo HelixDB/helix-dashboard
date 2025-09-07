@@ -6,7 +6,7 @@ import {
     NodeDetailsResponse 
 } from '../types';
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8080';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 
 export const fetchSchema = async (): Promise<SchemaInfo> => {
     const response = await fetch(`${API_BASE}/api/schema`);
@@ -73,7 +73,7 @@ export const fetchNodeDetailsForNodes = async (
             try {
                 const details = await fetchNodeDetails(nodeId);
                 return { nodeId, details };
-            } catch (error) {
+            } catch {
                 return null;
             }
         });
@@ -132,7 +132,7 @@ export const discoverNodeTypesFromData = async (): Promise<SchemaInfo> => {
                 if (nodeData && nodeData.label) {
                     nodeTypes.add(nodeData.label);
                 }
-            } catch (error) {
+            } catch {
                 continue;
             }
         }
@@ -141,7 +141,7 @@ export const discoverNodeTypesFromData = async (): Promise<SchemaInfo> => {
             nodes: Array.from(nodeTypes).map(type => ({ name: type, properties: [] })),
             edges: []
         };
-    } catch (error) {
+    } catch {
         return { nodes: [], edges: [] };
     }
 };
