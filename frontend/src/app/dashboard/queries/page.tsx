@@ -28,6 +28,11 @@ import { Send, Copy, Download, ArrowLeft, Search, Filter, X, Plus, Edit2, CheckS
 import { getEndpoints, clearEndpointsCache, convertParamValue } from "@/utils/endpoints"
 import { JsonTable } from "@/components/json-table"
 import { OptimizedJsonViewer } from "@/components/optimized-json-viewer"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface Parameter {
     name: string;
@@ -246,6 +251,7 @@ export default function QueriesPage() {
 
     // Refresh endpoints by clearing cache and reloading
     const refreshEndpoints = async () => {
+        setEditingMethod(null)
         clearEndpointsCache()
         await loadEndpoints()
     }
@@ -369,6 +375,7 @@ export default function QueriesPage() {
     const clearFilters = () => {
         setSearchTerm("")
         setSelectedTags([])
+        setEditingMethod(null)
     }
 
     const toggleMethodCollapse = (method: string) => {
@@ -1100,7 +1107,7 @@ export default function QueriesPage() {
                                             )}
                                             {!isCollapsed && (
                                                 <Card
-                                                    className={`group relative cursor-pointer ${selectedEndpoints.includes(key) ? 'ring-2 ring-primary' : ''}`}
+                                                    className={`group relative cursor-pointer pt-2 gap-0 ${selectedEndpoints.includes(key) ? 'ring-2 ring-primary' : ''}`}
                                                     onClick={() => {
                                                         if (isMultiSelectMode) {
                                                             toggleEndpointSelection(key)
@@ -1109,80 +1116,88 @@ export default function QueriesPage() {
                                                         }
                                                     }}
                                                 >
-                                                    <CardHeader>
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-2 flex-1">
-                                                                {isMultiSelectMode && (
-                                                                    <div className="h-6 w-6 flex items-center justify-center">
-                                                                        {selectedEndpoints.includes(key) ? (
-                                                                            <CheckSquare className="h-4 w-4" />
-                                                                        ) : (
-                                                                            <Square className="h-4 w-4" />
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                                <CardTitle className="text-lg">
-                                                                    {endpoint.name}
-                                                                </CardTitle>
+                                                    <CardHeader className="relative pb-3 gap-0">
+                                                        <div className="grid grid-cols-[1fr_auto] items-start gap-2 min-w-0">
+                                                            <div className="flex flex-col items-start justify-start gap-2 min-w-0 flex-1">
+                                                                <div className="flex items-start justify-start gap-2 min-w-0 w-full">
+                                                                    {isMultiSelectMode && (
+                                                                        <div className="h-6 w-6 flex items-center justify-center flex-shrink-0">
+                                                                            {selectedEndpoints.includes(key) ? (
+                                                                                <CheckSquare className="h-4 w-4" />
+                                                                            ) : (
+                                                                                <Square className="h-4 w-4" />
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    <CardTitle className="text-lg min-w-0 flex-1 truncate">
+                                                                        <Tooltip>
+                                                                        <TooltipTrigger>{endpoint.name}</TooltipTrigger>
+                                                                        <TooltipContent bgColor="bg-popover" fillColor="fill-popover">
+                                                                            <p className="text-left text-popover-foreground">{endpoint.name}</p>
+                                                                        </TooltipContent>
+                                                                        </Tooltip>
+                                                                    </CardTitle>
+                                                                    
+                                                                </div>
+                                                                <CardDescription className="w-full">
+                                                                    {endpoint.description}
+                                                                </CardDescription>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                {!isMultiSelectMode && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation()
-                                                                            setEditingTags(editingTags === key ? null : key)
-                                                                        }}
-                                                                    >
-                                                                        <Edit2 className="h-3 w-3" />
-                                                                    </Button>
-                                                                )}
-                                                                {editingMethod === key ? (
-                                                                    <Select
-                                                                        value={endpointMethods[key] || endpoint.method}
-                                                                        onValueChange={(value) => {
-                                                                            setEndpointMethods(prev => ({
-                                                                                ...prev,
-                                                                                [key]: value
-                                                                            }))
-                                                                            setEditingMethod(null)
-                                                                        }}
-                                                                    >
-                                                                        <SelectTrigger
-                                                                            className="h-6 w-20 text-xs"
-                                                                            onClick={(e) => e.stopPropagation()}
+                                                            <div className="flex flex-col items-end gap-2 pt-2 flex-shrink-0">
+                                                                    {editingMethod === key ? (
+                                                                        <Select
+                                                                            value={endpointMethods[key] || endpoint.method}
+                                                                            onValueChange={(value) => {
+                                                                                setEndpointMethods(prev => ({
+                                                                                    ...prev,
+                                                                                    [key]: value
+                                                                                }))
+                                                                                setEditingMethod(null)
+                                                                            }}
                                                                         >
-                                                                            <SelectValue />
-                                                                        </SelectTrigger>
-                                                                        <SelectContent>
-                                                                            <SelectItem value="GET">GET</SelectItem>
-                                                                            <SelectItem value="POST">POST</SelectItem>
-                                                                            <SelectItem value="PUT">PUT</SelectItem>
-                                                                            <SelectItem value="DELETE">DELETE</SelectItem>
-                                                                            <SelectItem value="PATCH">PATCH</SelectItem>
-                                                                        </SelectContent>
-                                                                    </Select>
-                                                                ) : (
-                                                                    <span
-                                                                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-pointer badge-${(endpointMethods[key] || endpoint.method).toLowerCase()}`}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation()
-                                                                            setEditingMethod(key)
-                                                                        }}
-                                                                        title="Click to change method"
-                                                                    >
-                                                                        {endpointMethods[key] || endpoint.method}
-                                                                    </span>
-                                                                )}
+                                                                            <SelectTrigger
+                                                                                className="h-6 w-20 text-xs"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            >
+                                                                                <SelectValue />
+                                                                            </SelectTrigger>
+                                                                            <SelectContent>
+                                                                                <SelectItem value="GET">GET</SelectItem>
+                                                                                <SelectItem value="POST">POST</SelectItem>
+                                                                                <SelectItem value="PUT">PUT</SelectItem>
+                                                                                <SelectItem value="DELETE">DELETE</SelectItem>
+                                                                                <SelectItem value="PATCH">PATCH</SelectItem>
+                                                                            </SelectContent>
+                                                                        </Select>
+                                                                    ) : (
+                                                                        <span
+                                                                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-pointer badge-${(endpointMethods[key] || endpoint.method).toLowerCase()}`}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                setEditingMethod(key)
+                                                                            }}
+                                                                            title="Click to change method"
+                                                                        >
+                                                                            {endpointMethods[key] || endpoint.method}
+                                                                        </span>
+                                                                    )}
+                                                                    {!isMultiSelectMode && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                setEditingTags(editingTags === key ? null : key)
+                                                                            }}
+                                                                        >
+                                                                            <Edit2 className="h-3 w-3" />
+                                                                        </Button>
+                                                                    )}
                                                             </div>
                                                         </div>
-                                                        <CardDescription>
-                                                            {endpoint.description}
-                                                        </CardDescription>
                                                     </CardHeader>
-                                                    <CardContent>
+                                                    <CardContent className="py-0">
                                                         <div className="space-y-3">
                                                             <div className="text-sm font-mono text-muted-foreground truncate">
                                                                 {endpoint.url}

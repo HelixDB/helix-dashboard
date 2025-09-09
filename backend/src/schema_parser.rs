@@ -24,10 +24,23 @@ pub struct EdgeType {
     pub properties: HashMap<String, String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VectorType {
+    pub name: String,
+    #[serde(default = "default_vector_type")]
+    pub vector_type: String,
+    pub properties: HashMap<String, String>,
+}
+
+fn default_vector_type() -> String {
+    "V".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SchemaInfo {
     pub nodes: Vec<NodeType>,
     pub edges: Vec<EdgeType>,
+    pub vectors: Vec<VectorType>,
 }
 
 pub fn parse_schema_file(file_path: &str) -> anyhow::Result<SchemaInfo> {
@@ -38,6 +51,7 @@ pub fn parse_schema_file(file_path: &str) -> anyhow::Result<SchemaInfo> {
 pub fn parse_schema_content(content: &str) -> anyhow::Result<SchemaInfo> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
+    let mut vectors = Vec::new();
 
     let lines: Vec<&str> = content.lines().collect();
     let mut i = 0;
@@ -58,12 +72,16 @@ pub fn parse_schema_content(content: &str) -> anyhow::Result<SchemaInfo> {
             if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
                 edges.push(edge);
             }
+        } else if line.starts_with("V::") {
+            if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
+                vectors.push(vector);
+            }
         } else {
             i += 1;
         }
     }
 
-    Ok(SchemaInfo { nodes, edges })
+    Ok(SchemaInfo { nodes, edges, vectors })
 }
 
 fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<NodeType>> {
@@ -103,6 +121,47 @@ fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Op
     Ok(Some(NodeType {
         name,
         node_type: node_type.to_string(),
+        properties,
+    }))
+}
+
+fn parse_vector_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<VectorType>> {
+    let line = lines[*index].trim();
+
+    let vector_type = if line.starts_with("V::") { "V" } else { "N" };
+    let name_part = line
+        .strip_prefix("V::")
+        .or_else(|| line.strip_prefix("N::"))
+        .ok_or_else(|| anyhow::anyhow!("Invalid vector definition"))?;
+
+    let name = name_part.trim_end_matches(" {").trim().to_string();
+    let mut properties = HashMap::new();
+
+    *index += 1;
+
+    while *index < lines.len() {
+        let prop_line = lines[*index].trim();
+
+        if prop_line == "}" {
+            *index += 1;
+            break;
+        }
+
+        if prop_line.is_empty() || prop_line.starts_with("//") {
+            *index += 1;
+            continue;
+        }
+
+        if let Some((prop_name, prop_type)) = parse_property_line(prop_line) {
+            properties.insert(prop_name, prop_type);
+        }
+
+        *index += 1;
+    }
+
+    Ok(Some(VectorType {
+        name,
+        vector_type: vector_type.to_string(),
         properties,
     }))
 }

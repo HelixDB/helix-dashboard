@@ -56,7 +56,8 @@ export function NavProjects({
                                 <span>{item.name}</span>
                             </Link>
                         </SidebarMenuButton>
-                        <DropdownMenu>
+                        {/* Side dropdown menu ... temporarily disabled */}
+                        {/* <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <SidebarMenuAction showOnHover>
                                     <MoreHorizontal />
@@ -82,15 +83,16 @@ export function NavProjects({
                                     <span>Delete Project</span>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
-                        </DropdownMenu>
+                        </DropdownMenu> */}
                     </SidebarMenuItem>
                 ))}
-                <SidebarMenuItem>
+                {/* More menu temporarily disabled */}
+                {/* <SidebarMenuItem>
                     <SidebarMenuButton className="text-sidebar-foreground/70">
                         <MoreHorizontal className="text-sidebar-foreground/70" />
                         <span>More</span>
                     </SidebarMenuButton>
-                </SidebarMenuItem>
+                </SidebarMenuItem> */}
             </SidebarMenu>
         </SidebarGroup>
     )

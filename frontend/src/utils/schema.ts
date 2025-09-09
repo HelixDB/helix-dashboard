@@ -11,9 +11,16 @@ export interface EdgeType {
     properties: Record<string, string>;
 }
 
+export interface VectorType {
+    name: string;
+    vector_type: string;
+    properties: Record<string, string>;
+}
+
 export interface SchemaInfo {
     nodes: NodeType[];
     edges: EdgeType[];
+    vectors: VectorType[];
 }
 
 class SchemaService {
@@ -30,7 +37,8 @@ class SchemaService {
             console.error('Error fetching schema:', error);
             return {
                 nodes: [],
-                edges: []
+                edges: [],
+                vectors: []
             };
         }
     }
