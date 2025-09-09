@@ -40,14 +40,5 @@ Frontend:
 - In some browsers like **Brave**, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
 - I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
 
-### Setup (Mac)
-1. Go into an IDE or terminal, then open/cd to your user (home) directory and do `Command + Shift + .` or cd into the `.helix/repo/helix-db` folder
-2. Change the branch to `dev`
-3. Then `cd helix-cli` and run `sh build.sh dev`
-4. You can now deploy your existing instance using `helix deploy -c <cluster_id> --dev`
-5. Run the frontend and backend, then you can now use the visualizer.
-
-**Don't forget that your HelixDB is now on the dev branch, and when you want to update to a newer version of helix you need to git pull in the branch and run the same command. Or you can change back the branch to main**
-
-### Setup (Windows)
-1. Same as Mac, I'm not sure where the .helix folder resides in Windows tho
+1. You must deploy your existing instance using `helix deploy -c <cluster_id> --dev` to use the visualizer
+2. Then run the frontend and backend
