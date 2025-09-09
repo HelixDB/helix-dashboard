@@ -163,6 +163,7 @@ fn create_empty_schema() -> schema_parser::SchemaInfo {
     schema_parser::SchemaInfo {
         nodes: vec![],
         edges: vec![],
+        vectors: vec![],
     }
 }
 

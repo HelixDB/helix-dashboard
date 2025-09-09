@@ -46,7 +46,7 @@ export default function Page() {
                     <div className="text-center space-y-0 py-3">
                         <div className="flex items-center justify-center space-x-2 mb-4">
                             {/* <h1 className="text-3xl font-bold text-foreground">Welcome to HelixDB Dashboard</h1> */}
-                            <TextType className="text-4xl font-bold text-foreground" text="Welcome to HelixDB Dashboard" typingSpeed={100} loop={false} as="h1" showCursor={false} />
+                            <TextType className="text-4xl font-bold text-foreground" text="Welcome to HelixDB Dashboard" typingSpeed={69} loop={false} as="h1" showCursor={false} />
                         </div>
                         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                             Your database analytics and visualization platform.
