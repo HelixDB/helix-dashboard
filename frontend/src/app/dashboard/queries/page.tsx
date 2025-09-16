@@ -25,7 +25,7 @@ import {
     SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Send, Copy, Download, ArrowLeft, Search, Filter, X, Plus, Edit2, CheckSquare, Square, SquarePen, FileText, RefreshCw, ChevronDown, ChevronRight } from "lucide-react"
-import { getEndpoints, clearEndpointsCache, convertParamValue } from "@/utils/endpoints"
+import { getEndpoints, convertParamValue } from "@/lib/api-client/endpoints"
 import { JsonTable } from "@/components/json-table"
 import { OptimizedJsonViewer } from "@/components/optimized-json-viewer"
 import {
@@ -252,7 +252,6 @@ export default function QueriesPage() {
     // Refresh endpoints by clearing cache and reloading
     const refreshEndpoints = async () => {
         setEditingMethod(null)
-        clearEndpointsCache()
         await loadEndpoints()
     }
 

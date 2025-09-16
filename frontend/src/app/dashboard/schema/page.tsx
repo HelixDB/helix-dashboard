@@ -19,7 +19,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Database, Network, Zap } from "lucide-react"
-import { schemaService, SchemaInfo, NodeType, EdgeType, VectorType } from "@/utils/schema"
+import { schemaService, SchemaInfo, NodeType, EdgeType, VectorType } from "@/lib/api-client/schema"
 
 export default function SchemaPage() {
     const [schema, setSchema] = useState<SchemaInfo | null>(null)
