@@ -181,7 +181,7 @@ function generateEndpointKey(queryName: string): string {
         .replace(/^-/, '');
 }
 
-export async function fetchEndpoints(): Promise<Record<string, EndpointConfig>> {
+export async function getEndpoints(): Promise<Record<string, EndpointConfig>> {
     try {
         const response = await fetch('http://localhost:8080/api/endpoints');
         if (!response.ok) {
@@ -201,20 +201,4 @@ export async function fetchEndpoints(): Promise<Record<string, EndpointConfig>> 
         console.error('Failed to fetch endpoints from backend:', error);
         return {};
     }
-}
-
-let endpointsCache: Record<string, EndpointConfig> | null = null;
-
-export async function getEndpoints(): Promise<Record<string, EndpointConfig>> {
-    if (endpointsCache) {
-        return endpointsCache;
-    }
-
-    endpointsCache = await fetchEndpoints();
-    return endpointsCache;
-}
-
-
-export function clearEndpointsCache(): void {
-    endpointsCache = null;
 }
