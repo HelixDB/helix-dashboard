@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Search, Filter, TrendingUp, Clock, AlertTriangle, BarChart3, Activity, RefreshCw } from "lucide-react"
 import * as d3 from "d3"
-import { getEndpoints, clearEndpointsCache } from "@/utils/endpoints"
+import { getEndpoints } from "@/lib/api-client/endpoints"
 
 // Generate synthetic analytics data for a full 36-hour period
 const generateFullTimeSeriesData = (baseValue: number, variance: number) => {
@@ -527,11 +527,6 @@ export default function AnalyticsPage() {
         }
     }, [selectedQueries])
 
-    // Refresh endpoints by clearing cache and reloading
-    const refreshEndpoints = async () => {
-        clearEndpointsCache()
-        await loadEndpoints()
-    }
 
     // Load endpoints on mount
     useEffect(() => {
@@ -732,7 +727,7 @@ export default function AnalyticsPage() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={refreshEndpoints}
+                                onClick={loadEndpoints}
                                 disabled={endpointsLoading}
                                 className="flex items-center gap-2"
                             >
