@@ -4,40 +4,86 @@
 //! including schema parsing, query handling, and web API endpoints.
 
 use clap::{Parser, ValueEnum};
+use dotenv::dotenv;
 use helix_rs::{HelixDB, HelixDBClient};
-use std::sync::Arc;
+use std::{sync::Arc, env};
 
 pub mod core;
 pub mod web;
+
+/// Constants used throughout the application
+pub const DEFAULT_BACKEND_PORT: u16 = 8080;
+pub const DEFAULT_HOST: &str = "localhost";
+pub const MAX_LIMIT: u32 = 300;
+pub const SCHEMA_FILE_PATH: &str = "helixdb-cfg/schema.hx";
+pub const QUERIES_FILE_PATH: &str = "helixdb-cfg/queries.hx";
+
+/// Environment variable names
+const ENV_API_KEY: &str = "HELIX_API_KEY";
+const ENV_DOCKER_HOST: &str = "DOCKER_HOST_INTERNAL";
+const ENV_BACKEND_PORT: &str = "BACKEND_PORT";
 
 /// Application configuration and state
 #[derive(Debug, Clone, ValueEnum)]
 pub enum DataSource {
     #[value(
         name = "local-introspect",
-        help = "Use local HelixDB introspect endpoint"
+        help = "Connect to local HelixDB instance via HTTP introspection endpoint (requires running HelixDB service)"
     )]
     LocalIntrospect,
-    #[value(name = "local-file", help = "Read from local helixdb-cfg files")]
+    #[value(
+        name = "local-file", 
+        help = "Load configuration directly from helixdb-cfg directory (no HelixDB service required)"
+    )]
     LocalFile,
-    #[value(name = "cloud", help = "Use cloud HelixDB introspect endpoint")]
+    #[value(
+        name = "cloud", 
+        help = "Connect to remote HelixDB instance (requires URL and optional API key via HELIX_API_KEY)"
+    )]
     Cloud,
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    name = "helix-dashboard-backend",
+    author = "HelixDB Team",
+    version,
+    about = "HelixDB Dashboard Backend Server",
+    long_about = "A high-performance backend server for the HelixDB dashboard interface.\n\
+                  Supports multiple data sources including local development instances,\n\
+                  file-based configuration, and cloud deployments with authentication.\n\n\
+                  Examples:\n  \
+                    helix-dashboard-backend local-introspect\n  \
+                    helix-dashboard-backend local-file\n  \
+                    helix-dashboard-backend cloud https://api.helixdb.com",
+    after_help = "Environment Variables:\n  \
+                  HELIX_API_KEY        API key for cloud authentication\n  \
+                  DOCKER_HOST_INTERNAL Docker host override (default: localhost)\n  \
+                  BACKEND_PORT         Web server port (default: 8080)"
+)]
 pub struct Args {
-    #[arg(value_enum, default_value = "local-introspect")]
-    pub source: DataSource,
-    #[arg(value_name = "URL", required_if_eq("source", "cloud"))]
-    pub cloud_url: Option<String>,
     #[arg(
-        short,
-        long,
-        default_value = "6969",
-        help = "Port for local HelixDB instance"
+        value_enum, 
+        default_value = "local-introspect",
+        help = "Data source configuration mode"
     )]
-    pub port: u16,
+    pub source: DataSource,
+    
+    #[arg(
+        value_name = "URL", 
+        required_if_eq("source", "cloud"),
+        help = "HelixDB cloud endpoint URL (required for cloud mode)"
+    )]
+    pub cloud_url: Option<String>,
+    
+    #[arg(
+        short = 'p',
+        long = "port",
+        default_value = "6969",
+        value_name = "PORT",
+        help = "Local HelixDB service port (used with local-introspect mode)"
+    )]
+    pub helix_port: u16,
 }
 
 #[derive(Clone)]
@@ -46,17 +92,22 @@ pub struct AppState {
     pub data_source: DataSource,
     pub helix_url: String,
     pub api_key: Option<String>,
+    pub backend_port: u16,  // Backend web server port  
+    pub helix_port: u16,    // HelixDB port
 }
 
 impl AppState {
     /// Create a new AppState from command-line arguments
-    pub fn new(args: Args) -> Self {
-        let host =
-            std::env::var("DOCKER_HOST_INTERNAL").unwrap_or_else(|_| "localhost".to_string());
-
-        let helix_url = match args.source {
+    pub fn new() -> Self {
+        dotenv().ok();
+        let args = Args::parse();
+        let Args { source: data_source, cloud_url, helix_port } = args;
+        
+        let api_key = env::var(ENV_API_KEY).ok();
+        let host = env::var(ENV_DOCKER_HOST).unwrap_or_else(|_| DEFAULT_HOST.to_string());
+        let helix_url = match data_source {
             DataSource::LocalIntrospect => {
-                let url = format!("http://{}:{}", host, args.port);
+                let url = format!("http://{}:{}", host, helix_port);
                 println!("Starting server in local-introspect mode");
                 println!("Using local HelixDB introspect endpoint: {url}/introspect");
                 url
@@ -64,51 +115,54 @@ impl AppState {
             DataSource::LocalFile => {
                 println!("Starting server in local-file mode");
                 println!("Reading from local helixdb-cfg files");
-                format!("http://{}:{}", host, args.port)
+                format!("http://{}:{}", host, helix_port)
             }
             DataSource::Cloud => {
-                let url = args
-                    .cloud_url
+                let url = cloud_url
                     .clone()
                     .expect("Cloud URL is required for cloud mode");
-                let has_api_key = std::env::var("HELIX_API_KEY")
-                    .ok()
-                    .filter(|key| !key.trim().is_empty())
-                    .is_some();
                 println!("Starting server in cloud mode");
                 println!("Using cloud HelixDB endpoint: {url}/introspect");
-                if has_api_key {
-                    println!(
+                match api_key.as_ref() {
+                    Some(_) => println!(
                         "Authentication: Using API key from HELIX_API_KEY environment variable"
-                    );
-                } else {
-                    println!("Authentication: No API key found, connecting without authentication");
+                    ),
+                    None => println!("Authentication: No API key found, connecting without authentication"),
                 }
                 url
             }
         };
 
-        let helix_db = Self::create_helix_db(&args, &host);
+        let helix_db = Self::initialize_helix_db(&data_source, &cloud_url, &host, &api_key, helix_port);
+
+        let backend_port = env::var(ENV_BACKEND_PORT)
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(DEFAULT_BACKEND_PORT);
 
         Self {
-            helix_db: helix_db.clone(),
-            data_source: args.source.clone(),
+            helix_db,
+            data_source,
             helix_url,
-            api_key: std::env::var("HELIX_API_KEY").ok(),
+            api_key,
+            backend_port,
+            helix_port,
         }
     }
 
     /// Initialize the HelixDB instance based on configuration
-    fn create_helix_db(args: &Args, host: &str) -> Arc<HelixDB> {
-        match args.source {
+    fn initialize_helix_db(
+        data_source: &DataSource, 
+        cloud_url: &Option<String>, 
+        host: &str, 
+        api_key: &Option<String>, 
+        helix_port: u16
+    ) -> Arc<HelixDB> {
+        match data_source {
             DataSource::Cloud => {
-                let cloud_api_url = args
-                    .cloud_url
+                let cloud_api_url = cloud_url
                     .as_ref()
                     .expect("Cloud URL is required for cloud mode");
-                let api_key = std::env::var("HELIX_API_KEY")
-                    .ok()
-                    .filter(|key| !key.trim().is_empty());
 
                 Arc::new(HelixDB::new(
                     Some(cloud_api_url.as_str()),
@@ -118,15 +172,11 @@ impl AppState {
             }
             DataSource::LocalIntrospect | DataSource::LocalFile => Arc::new(HelixDB::new(
                 Some(&format!("http://{host}")),
-                Some(args.port),
+                Some(helix_port),
                 None,
             )),
         }
     }
 }
 
-/// Constants used throughout the application
-pub const DEFAULT_PORT: u16 = 8080;
-pub const MAX_LIMIT: u32 = 300;
-pub const SCHEMA_FILE_PATH: &str = "helixdb-cfg/schema.hx";
-pub const QUERIES_FILE_PATH: &str = "helixdb-cfg/queries.hx";
+

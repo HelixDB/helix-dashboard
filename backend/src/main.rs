@@ -1,33 +1,28 @@
 use axum::{
     Router,
-    routing::{delete, get, post, put},
+    routing::{any, get},
 };
-use clap::Parser;
-use dotenv::dotenv;
 use tower_http::cors::{Any, CorsLayer};
+use anyhow::Result;
+use tokio::net::TcpListener;
 
 use backend::{
-    AppState, Args, DEFAULT_PORT,
-    web::{
-        execute_query_handler, get_endpoints_handler, get_node_connections_handler,
-        get_node_details_handler, get_nodes_by_label_handler, get_nodes_edges_handler,
-        get_schema_handler,
-    },
+    AppState,
+    web::*  
 };
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
-    let args = Args::parse();
-    let app_state = AppState::new(args);
+async fn main() -> Result<()> {
+    let app_state = AppState::new();
+    let backend_port = app_state.backend_port;
+    let listener = TcpListener::bind(format!("0.0.0.0:{backend_port}")).await?;
+
+    println!("Server running on http://0.0.0.0:{backend_port}");
 
     let app = Router::new()
         .route("/api/schema", get(get_schema_handler))
         .route("/api/endpoints", get(get_endpoints_handler))
-        .route("/api/query/{query_name}", get(execute_query_handler))
-        .route("/api/query/{query_name}", post(execute_query_handler))
-        .route("/api/query/{query_name}", put(execute_query_handler))
-        .route("/api/query/{query_name}", delete(execute_query_handler))
+        .route("/api/query/{query_name}", any(execute_query_handler))
         .route("/nodes-edges", get(get_nodes_edges_handler))
         .route("/nodes-by-label", get(get_nodes_by_label_handler))
         .route("/node-details", get(get_node_details_handler))
@@ -39,10 +34,6 @@ async fn main() -> anyhow::Result<()> {
                 .allow_headers(Any),
         )
         .with_state(app_state);
-
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{DEFAULT_PORT}")).await?;
-
-    println!("Server running on http://0.0.0.0:{DEFAULT_PORT}");
     axum::serve(listener, app).await?;
 
     Ok(())
