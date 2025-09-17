@@ -93,7 +93,7 @@ pub async fn get_endpoints_handler(
     State(app_state): State<AppState>,
 ) -> Json<Vec<query_parser::ApiEndpointInfo>> {
     match app_state.data_source {
-        DataSource::LocalFile => match query_parser::get_all_api_endpoints(QUERIES_FILE_PATH) {
+        DataSource::LocalFile => match query_parser::ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
             Ok(endpoints) => Json(endpoints),
             Err(e) => {
                 eprintln!("Error getting endpoints: {e}");
@@ -320,10 +320,10 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpoin
     let parameters = if let serde_json::Value::Object(params) = query.parameters {
         params
             .into_iter()
-            .map(|(name, type_val)| query_parser::QueryParameter {
+            .map(|(name, type_val)| query_parser::QueryParameter::new(
                 name,
-                param_type: type_val.as_str().unwrap_or("String").to_string(),
-            })
+                type_val.as_str().unwrap_or("String").to_string(),
+            ))
             .collect()
     } else {
         vec![]
@@ -331,12 +331,12 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpoin
 
     let method = determine_http_method(&query.name);
 
-    query_parser::ApiEndpointInfo {
-        path: format!("/api/query/{}", query.name),
-        method: method.to_string(),
-        query_name: query.name,
+    query_parser::ApiEndpointInfo::new(
+        format!("/api/query/{}", query.name),
+        method.to_string(),
+        query.name,
         parameters,
-    }
+    )
 }
 
 pub fn determine_http_method(query_name: &str) -> &'static str {
