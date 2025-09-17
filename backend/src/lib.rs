@@ -7,9 +7,7 @@ use std::sync::Arc;
 use helix_rs::{HelixDB, HelixDBClient};
 use clap::{Parser, ValueEnum};
 
-pub mod query_parser;
-pub mod schema_parser;
-pub mod utils;
+pub mod core;
 pub mod web;
 
 /// Application configuration and state

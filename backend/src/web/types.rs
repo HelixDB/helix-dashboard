@@ -32,6 +32,6 @@ pub struct IntrospectQuery {
 
 #[derive(Deserialize)]
 pub struct CloudIntrospectData {
-    pub schema: crate::schema_parser::SchemaInfo,
+    pub schema: crate::core::schema_parser::SchemaInfo,
     pub queries: Vec<IntrospectQuery>,
 }

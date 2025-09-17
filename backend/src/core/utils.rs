@@ -5,7 +5,7 @@ use reqwest::Client as HttpClient;
 use crate::MAX_LIMIT;
 
 #[cfg(test)]
-use crate::schema_parser;
+use crate::core::schema_parser;
 
 
 /// Create default error data structure

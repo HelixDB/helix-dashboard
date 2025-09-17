@@ -9,7 +9,7 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use crate::{
-    schema_parser, query_parser, utils::*, web::types::*, AppState, 
+    core::{schema_parser, query_parser, utils::*}, web::types::*, AppState, 
     SCHEMA_FILE_PATH, QUERIES_FILE_PATH, DataSource
 };
 
