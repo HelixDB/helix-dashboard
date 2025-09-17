@@ -93,66 +93,254 @@ fn map_helix_type_to_rust(helix_type: &str) -> String {
 }
 
 fn determine_endpoint_info(query_name: &str, parameters: &[QueryParameter]) -> (String, String) {
-    let lower_name = query_name.to_lowercase();
-
-    let method = if lower_name.starts_with("create") || lower_name.starts_with("add") {
-        "POST"
-    } else if lower_name.starts_with("update") {
-        "PUT"
-    } else if lower_name.starts_with("delete") || lower_name.starts_with("remove") {
-        "DELETE"
-    } else {
-        "GET"
+    let method = match query_name.to_lowercase().as_str() {
+        name if name.starts_with("create") || name.starts_with("add") => "POST",
+        name if name.starts_with("update") => "PUT",
+        name if name.starts_with("delete") || name.starts_with("remove") => "DELETE",
+        _ => "GET",
     };
 
-    let path = generate_endpoint_path(query_name, parameters);
-
-    (method.to_string(), path)
+    (
+        method.to_string(),
+        generate_endpoint_path(query_name, parameters),
+    )
 }
 
 fn generate_endpoint_path(query_name: &str, parameters: &[QueryParameter]) -> String {
     let base_path = convert_camel_to_kebab(query_name);
 
-    let mut path_params = Vec::new();
-    for param in parameters {
-        if param.name.ends_with("_id") || param.name == "id" {
-            path_params.push(format!("{{{}}}", param.name));
-        }
-    }
+    let path_params: Vec<String> = parameters
+        .iter()
+        .filter(|param| param.name.ends_with("_id") || param.name == "id")
+        .map(|param| format!("{{{}}}", param.name))
+        .collect();
 
-    if path_params.is_empty() {
-        format!("/api/query/{}", base_path)
-    } else {
-        format!("/api/query/{}/{}", base_path, path_params.join("/"))
+    match path_params.is_empty() {
+        true => format!("/api/query/{base_path}"),
+        false => {
+            let joined_params = path_params.join("/");
+            format!("/api/query/{base_path}/{joined_params}")
+        },
     }
 }
 
 fn convert_camel_to_kebab(camel_case: &str) -> String {
-    let mut result = String::new();
-    let mut chars = camel_case.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch.is_uppercase() && !result.is_empty() {
-            result.push('-');
-        }
-        result.push(ch.to_lowercase().next().unwrap());
-    }
-
-    result
+    camel_case
+        .chars()
+        .enumerate()
+        .fold(String::new(), |mut acc, (i, ch)| {
+            if ch.is_uppercase() && i > 0 {
+                acc.push('-');
+            }
+            acc.push(ch.to_lowercase().next().unwrap_or(ch));
+            acc
+        })
 }
 
 pub fn get_all_api_endpoints(queries_file_path: &str) -> anyhow::Result<Vec<ApiEndpointInfo>> {
-    let query_definitions = parse_queries_file(queries_file_path)?;
+    parse_queries_file(queries_file_path).map(|query_definitions| {
+        query_definitions
+            .into_iter()
+            .map(|query| ApiEndpointInfo {
+                path: query.endpoint_path,
+                method: query.http_method,
+                query_name: query.name,
+                parameters: query.parameters,
+            })
+            .collect()
+    })
+}
 
-    let endpoints = query_definitions
-        .into_iter()
-        .map(|query| ApiEndpointInfo {
-            path: query.endpoint_path,
-            method: query.http_method,
-            query_name: query.name,
-            parameters: query.parameters,
-        })
-        .collect();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    Ok(endpoints)
+    #[test]
+    fn test_map_helix_type_to_rust() {
+        assert_eq!(map_helix_type_to_rust("String"), "String");
+        assert_eq!(map_helix_type_to_rust("I32"), "i32");
+        assert_eq!(map_helix_type_to_rust("I64"), "i64");
+        assert_eq!(map_helix_type_to_rust("F64"), "f64");
+        assert_eq!(map_helix_type_to_rust("ID"), "String");
+        assert_eq!(map_helix_type_to_rust("[F64]"), "Vec<f64>");
+        assert_eq!(map_helix_type_to_rust("CustomType"), "CustomType");
+    }
+
+    #[test]
+    fn test_convert_camel_to_kebab() {
+        assert_eq!(convert_camel_to_kebab("getUserById"), "get-user-by-id");
+        assert_eq!(convert_camel_to_kebab("createUser"), "create-user");
+        assert_eq!(convert_camel_to_kebab("user"), "user");
+        assert_eq!(
+            convert_camel_to_kebab("getAllUsersFromDB"),
+            "get-all-users-from-d-b"
+        );
+        assert_eq!(convert_camel_to_kebab(""), "");
+    }
+
+    #[test]
+    fn test_determine_endpoint_info() {
+        let params = vec![QueryParameter {
+            name: "user_id".to_string(),
+            param_type: "String".to_string(),
+        }];
+
+        let (method, path) = determine_endpoint_info("createUser", &params);
+        assert_eq!(method, "POST");
+        assert_eq!(path, "/api/query/create-user/{user_id}");
+
+        let (method, _path) = determine_endpoint_info("updateUser", &params);
+        assert_eq!(method, "PUT");
+
+        let (method, _path) = determine_endpoint_info("deleteUser", &params);
+        assert_eq!(method, "DELETE");
+
+        let (method, _path) = determine_endpoint_info("getUser", &params);
+        assert_eq!(method, "GET");
+    }
+
+    #[test]
+    fn test_generate_endpoint_path_with_id_params() {
+        let params = vec![
+            QueryParameter {
+                name: "user_id".to_string(),
+                param_type: "String".to_string(),
+            },
+            QueryParameter {
+                name: "post_id".to_string(),
+                param_type: "String".to_string(),
+            },
+        ];
+
+        let path = generate_endpoint_path("getUserPosts", &params);
+        assert_eq!(path, "/api/query/get-user-posts/{user_id}/{post_id}");
+    }
+
+    #[test]
+    fn test_generate_endpoint_path_without_id_params() {
+        let params = vec![
+            QueryParameter {
+                name: "name".to_string(),
+                param_type: "String".to_string(),
+            },
+            QueryParameter {
+                name: "age".to_string(),
+                param_type: "i32".to_string(),
+            },
+        ];
+
+        let path = generate_endpoint_path("getAllUsers", &params);
+        assert_eq!(path, "/api/query/get-all-users");
+    }
+
+    #[test]
+    fn test_generate_endpoint_path_with_id_param() {
+        let params = vec![QueryParameter {
+            name: "id".to_string(),
+            param_type: "String".to_string(),
+        }];
+
+        let path = generate_endpoint_path("getUser", &params);
+        assert_eq!(path, "/api/query/get-user/{id}");
+    }
+
+    #[test]
+    fn test_parse_parameters_empty() {
+        let result = parse_parameters("");
+        assert!(result.is_empty());
+
+        let result = parse_parameters("   ");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_parameters_single() {
+        let result = parse_parameters("name: String");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "name");
+        assert_eq!(result[0].param_type, "String");
+    }
+
+    #[test]
+    fn test_parse_parameters_multiple() {
+        let result = parse_parameters("user_id: ID, name: String, age: I32");
+        assert_eq!(result.len(), 3);
+
+        assert_eq!(result[0].name, "user_id");
+        assert_eq!(result[0].param_type, "String");
+
+        assert_eq!(result[1].name, "name");
+        assert_eq!(result[1].param_type, "String");
+
+        assert_eq!(result[2].name, "age");
+        assert_eq!(result[2].param_type, "i32");
+    }
+
+    #[test]
+    fn test_parse_query_line_valid() {
+        let line = "QUERY getUserById (user_id: ID) => User";
+        let result = parse_query_line(line);
+
+        assert!(result.is_some());
+        let query = result.unwrap();
+        assert_eq!(query.name, "getUserById");
+        assert_eq!(query.parameters.len(), 1);
+        assert_eq!(query.parameters[0].name, "user_id");
+        assert_eq!(query.parameters[0].param_type, "String");
+        assert_eq!(query.http_method, "GET");
+        assert_eq!(query.endpoint_path, "/api/query/get-user-by-id/{user_id}");
+    }
+
+    #[test]
+    fn test_parse_query_line_no_params() {
+        let line = "QUERY getAllUsers () => [User]";
+        let result = parse_query_line(line);
+
+        assert!(result.is_some());
+        let query = result.unwrap();
+        assert_eq!(query.name, "getAllUsers");
+        assert!(query.parameters.is_empty());
+        assert_eq!(query.http_method, "GET");
+        assert_eq!(query.endpoint_path, "/api/query/get-all-users");
+    }
+
+    #[test]
+    fn test_parse_query_line_invalid() {
+        let line = "INVALID LINE";
+        let result = parse_query_line(line);
+        assert!(result.is_none());
+
+        let line = "QUERY incomplete";
+        let result = parse_query_line(line);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_queries_file_content() {
+        let content = r#"
+            // Some comment
+            QUERY getUserById (user_id: ID) => User
+            QUERY createUser (name: String, age: I32) => User
+            // Another comment
+            QUERY deleteUser (user_id: ID) => Boolean
+        "#;
+
+        let mut queries = Vec::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("QUERY ") {
+                if let Some(query_def) = parse_query_line(line) {
+                    queries.push(query_def);
+                }
+            }
+        }
+
+        assert_eq!(queries.len(), 3);
+        assert_eq!(queries[0].name, "getUserById");
+        assert_eq!(queries[0].http_method, "GET");
+        assert_eq!(queries[1].name, "createUser");
+        assert_eq!(queries[1].http_method, "POST");
+        assert_eq!(queries[2].name, "deleteUser");
+        assert_eq!(queries[2].http_method, "DELETE");
+    }
 }
