@@ -7,7 +7,7 @@ use dotenv::dotenv;
 use tower_http::cors::{Any, CorsLayer};
 
 use backend::{
-    Args, create_app_state, DEFAULT_PORT,
+    Args, AppState, DEFAULT_PORT,
     web::{
         get_schema_handler, get_endpoints_handler, execute_query_handler,
         get_nodes_edges_handler, get_nodes_by_label_handler, 
@@ -19,7 +19,7 @@ use backend::{
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
-    let app_state = create_app_state(args);
+    let app_state = AppState::new(args);
 
     let app = Router::new()
         .route("/api/schema", get(get_schema_handler))
