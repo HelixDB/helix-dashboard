@@ -1,29 +1,58 @@
 //! Utility functions used throughout the application
 
-use serde_json::{Number, Value, json};
-use reqwest::Client as HttpClient;
 use crate::MAX_LIMIT;
+use reqwest::Client as HttpClient;
+use serde_json::{Number, Value, json};
 
 #[cfg(test)]
 use crate::core::schema_parser;
 
+/// Default error response structure for API endpoints
+pub struct ErrorResponse;
+
+impl ErrorResponse {
+    /// Create default error data structure
+    pub fn default_data() -> serde_json::Value {
+        json!({
+            "nodes": [],
+            "edges": [],
+            "vectors": []
+        })
+    }
+
+    /// Create error data structure for node connections
+    pub fn node_connections_data() -> serde_json::Value {
+        json!({
+            "connected_nodes": {"values": []},
+            "incoming_edges": {"values": []},
+            "outgoing_edges": {"values": []}
+        })
+    }
+}
+
+/// Validate limit parameter against maximum allowed
+pub fn validate_limit(limit: Option<u32>) -> Option<u32> {
+    TypeConverter::validate_limit(limit)
+}
+
+/// Convert string value to appropriate JSON type based on parameter type
+pub fn convert_string_to_type(value: &str, param_type: &str) -> serde_json::Value {
+    TypeConverter::string_to_json_type(value, param_type)
+}
+
+/// Parse F64 array from string representation
+pub fn parse_f64_array(value: &str) -> serde_json::Value {
+    TypeConverter::parse_f64_array(value)
+}
 
 /// Create default error data structure
 pub fn create_default_error_data() -> serde_json::Value {
-    json!({
-        "nodes": [],
-        "edges": [],
-        "vectors": []
-    })
+    ErrorResponse::default_data()
 }
 
 /// Create error data structure for node connections
 pub fn create_node_connections_error_data() -> serde_json::Value {
-    json!({
-        "connected_nodes": {"values": []},
-        "incoming_edges": {"values": []},
-        "outgoing_edges": {"values": []}
-    })
+    ErrorResponse::node_connections_data()
 }
 
 /// Make HTTP request with optional authentication
@@ -48,71 +77,76 @@ pub async fn make_http_request_with_auth(
     Ok(value)
 }
 
-/// Validate limit parameter against maximum allowed
-pub fn validate_limit(limit: Option<u32>) -> Option<u32> {
-    limit.filter(|&l| l <= MAX_LIMIT)
-}
+/// Type conversion utilities
+pub struct TypeConverter;
 
-/// Convert string value to appropriate JSON type based on parameter type
-pub fn convert_string_to_type(value: &str, param_type: &str) -> serde_json::Value {
-    let parse_number = |v: &str| -> Option<Number> {
-        Number::from_f64(v.parse().ok()?).or_else(|| Some(Number::from(0)))
-    };
-
-    match param_type {
-        "String" | "ID" => Value::String(value.to_string()),
-        "I32" => value
-            .parse::<i32>()
-            .map(|n| Value::Number(Number::from(n)))
-            .unwrap_or_else(|_| Value::String(value.to_string())),
-        "I64" => value
-            .parse::<i64>()
-            .map(|n| Value::Number(Number::from(n)))
-            .unwrap_or_else(|_| Value::String(value.to_string())),
-        "U32" => value
-            .parse::<u32>()
-            .map(|n| Value::Number(Number::from(n)))
-            .unwrap_or_else(|_| Value::Number(Number::from(0u32))),
-        "U64" => value
-            .parse::<u64>()
-            .map(|n| Value::Number(Number::from(n)))
-            .unwrap_or_else(|_| Value::Number(Number::from(0u64))),
-        "U128" => value
-            .parse::<u128>()
-            .ok()
-            .and_then(|n| parse_number(&(n as f64).to_string()))
-            .map(Value::Number)
-            .unwrap_or_else(|| Value::Number(Number::from(0))),
-        "F64" => value
-            .parse::<f64>()
-            .ok()
-            .and_then(|n| parse_number(&n.to_string()))
-            .map(Value::Number)
-            .unwrap_or_else(|| Value::String(value.to_string())),
-        "Array(F64)" => parse_f64_array(value),
-        _ => Value::String(value.to_string()),
+impl TypeConverter {
+    /// Validate limit parameter against maximum allowed
+    pub fn validate_limit(limit: Option<u32>) -> Option<u32> {
+        limit.filter(|&l| l <= MAX_LIMIT)
     }
-}
 
-/// Parse F64 array from string representation
-pub fn parse_f64_array(value: &str) -> serde_json::Value {
-    serde_json::from_str::<Vec<f64>>(value)
-        .or_else(|_| {
-            value
-                .split(',')
-                .map(|s| s.trim().parse::<f64>())
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .map(|numbers| {
-            serde_json::Value::Array(
-                numbers
-                    .into_iter()
-                    .filter_map(serde_json::Number::from_f64)
-                    .map(serde_json::Value::Number)
-                    .collect(),
-            )
-        })
-        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()))
+    /// Convert string value to appropriate JSON type based on parameter type
+    pub fn string_to_json_type(value: &str, param_type: &str) -> serde_json::Value {
+        let parse_number = |v: &str| -> Option<Number> {
+            Number::from_f64(v.parse().ok()?).or_else(|| Some(Number::from(0)))
+        };
+
+        match param_type {
+            "String" | "ID" => Value::String(value.to_string()),
+            "I32" => value
+                .parse::<i32>()
+                .map(|n| Value::Number(Number::from(n)))
+                .unwrap_or_else(|_| Value::String(value.to_string())),
+            "I64" => value
+                .parse::<i64>()
+                .map(|n| Value::Number(Number::from(n)))
+                .unwrap_or_else(|_| Value::String(value.to_string())),
+            "U32" => value
+                .parse::<u32>()
+                .map(|n| Value::Number(Number::from(n)))
+                .unwrap_or_else(|_| Value::Number(Number::from(0u32))),
+            "U64" => value
+                .parse::<u64>()
+                .map(|n| Value::Number(Number::from(n)))
+                .unwrap_or_else(|_| Value::Number(Number::from(0u64))),
+            "U128" => value
+                .parse::<u128>()
+                .ok()
+                .and_then(|n| parse_number(&(n as f64).to_string()))
+                .map(Value::Number)
+                .unwrap_or_else(|| Value::Number(Number::from(0))),
+            "F64" => value
+                .parse::<f64>()
+                .ok()
+                .and_then(|n| parse_number(&n.to_string()))
+                .map(Value::Number)
+                .unwrap_or_else(|| Value::String(value.to_string())),
+            "Array(F64)" => Self::parse_f64_array(value),
+            _ => Value::String(value.to_string()),
+        }
+    }
+
+    /// Parse F64 array from string representation
+    pub fn parse_f64_array(value: &str) -> serde_json::Value {
+        serde_json::from_str::<Vec<f64>>(value)
+            .or_else(|_| {
+                value
+                    .split(',')
+                    .map(|s| s.trim().parse::<f64>())
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map(|numbers| {
+                serde_json::Value::Array(
+                    numbers
+                        .into_iter()
+                        .filter_map(serde_json::Number::from_f64)
+                        .map(serde_json::Value::Number)
+                        .collect(),
+                )
+            })
+            .unwrap_or_else(|_| serde_json::Value::String(value.to_string()))
+    }
 }
 
 /// Sort JSON object with numeric keys first, then 'id', then others

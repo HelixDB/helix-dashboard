@@ -10,6 +10,50 @@ pub struct NodeType {
     pub properties: HashMap<String, String>,
 }
 
+impl NodeType {
+    /// Parse a node definition from schema lines
+    pub fn parse_from_lines(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<Self>> {
+        let line = lines[*index].trim();
+
+        let node_type = if line.starts_with("N::") { "N" } else { "V" };
+        let name_part = line
+            .strip_prefix("N::")
+            .or_else(|| line.strip_prefix("V::"))
+            .ok_or_else(|| anyhow::anyhow!("Invalid node definition"))?;
+
+        let name = name_part.trim_end_matches(" {").trim().to_string();
+        let mut properties = HashMap::new();
+
+        *index += 1;
+
+        while *index < lines.len() {
+            let prop_line = lines[*index].trim();
+
+            if prop_line == "}" {
+                *index += 1;
+                break;
+            }
+
+            if prop_line.is_empty() || prop_line.starts_with("//") {
+                *index += 1;
+                continue;
+            }
+
+            if let Some((prop_name, prop_type)) = parse_property_line(prop_line) {
+                properties.insert(prop_name, prop_type);
+            }
+
+            *index += 1;
+        }
+
+        Ok(Some(Self {
+            name,
+            node_type: node_type.to_string(),
+            properties,
+        }))
+    }
+}
+
 fn default_node_type() -> String {
     "N".to_string()
 }
@@ -24,12 +68,127 @@ pub struct EdgeType {
     pub properties: HashMap<String, String>,
 }
 
+impl EdgeType {
+    /// Parse an edge definition from schema lines
+    pub fn parse_from_lines(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<Self>> {
+        let line = lines[*index].trim();
+
+        let name = line
+            .strip_prefix("E::")
+            .ok_or_else(|| anyhow::anyhow!("Invalid edge definition"))?
+            .trim_end_matches(" {")
+            .trim()
+            .to_string();
+
+        let mut from_node = String::new();
+        let mut to_node = String::new();
+        let mut properties = HashMap::new();
+        let mut in_properties_section = false;
+
+        *index += 1;
+
+        while *index < lines.len() {
+            let edge_line = lines[*index].trim();
+
+            if edge_line == "}" {
+                *index += 1;
+                break;
+            }
+
+            if edge_line.is_empty() || edge_line.starts_with("//") {
+                *index += 1;
+                continue;
+            }
+
+            match edge_line {
+                l if l.starts_with("From:") => {
+                    from_node = l
+                        .strip_prefix("From:")
+                        .unwrap_or("")
+                        .trim()
+                        .trim_end_matches(",")
+                        .to_string();
+                }
+                l if l.starts_with("To:") => {
+                    to_node = l
+                        .strip_prefix("To:")
+                        .unwrap_or("")
+                        .trim()
+                        .trim_end_matches(",")
+                        .to_string();
+                }
+                "Properties: {" => in_properties_section = true,
+                "}" if in_properties_section => in_properties_section = false,
+                l if in_properties_section => {
+                    if let Some((prop_name, prop_type)) = parse_property_line(l) {
+                        properties.insert(prop_name, prop_type);
+                    }
+                }
+                _ => {}
+            }
+
+            *index += 1;
+        }
+
+        Ok(Some(Self {
+            name,
+            from_node,
+            to_node,
+            properties,
+        }))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VectorType {
     pub name: String,
     #[serde(default = "default_vector_type")]
     pub vector_type: String,
     pub properties: HashMap<String, String>,
+}
+
+impl VectorType {
+    /// Parse a vector definition from schema lines
+    pub fn parse_from_lines(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<Self>> {
+        let line = lines[*index].trim();
+
+        let vector_type = if line.starts_with("V::") { "V" } else { "N" };
+        let name_part = line
+            .strip_prefix("V::")
+            .or_else(|| line.strip_prefix("N::"))
+            .ok_or_else(|| anyhow::anyhow!("Invalid vector definition"))?;
+
+        let name = name_part.trim_end_matches(" {").trim().to_string();
+        let mut properties = HashMap::new();
+
+        *index += 1;
+
+        while *index < lines.len() {
+            let prop_line = lines[*index].trim();
+
+            if prop_line == "}" {
+                *index += 1;
+                break;
+            }
+
+            if prop_line.is_empty() || prop_line.starts_with("//") {
+                *index += 1;
+                continue;
+            }
+
+            if let Some((prop_name, prop_type)) = parse_property_line(prop_line) {
+                properties.insert(prop_name, prop_type);
+            }
+
+            *index += 1;
+        }
+
+        Ok(Some(Self {
+            name,
+            vector_type: vector_type.to_string(),
+            properties,
+        }))
+    }
 }
 
 fn default_vector_type() -> String {
@@ -78,17 +237,17 @@ impl SchemaInfo {
 
             match line {
                 l if l.starts_with("N::") => {
-                    if let Some(node) = parse_node_definition(&lines, &mut i)? {
+                    if let Some(node) = NodeType::parse_from_lines(&lines, &mut i)? {
                         nodes.push(node);
                     }
                 }
                 l if l.starts_with("V::") => {
-                    if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
+                    if let Some(vector) = VectorType::parse_from_lines(&lines, &mut i)? {
                         vectors.push(vector);
                     }
                 }
                 l if l.starts_with("E::") => {
-                    if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
+                    if let Some(edge) = EdgeType::parse_from_lines(&lines, &mut i)? {
                         edges.push(edge);
                     }
                 }
@@ -108,160 +267,6 @@ impl Default for SchemaInfo {
     fn default() -> Self {
         Self::new()
     }
-}
-
-
-fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<NodeType>> {
-    let line = lines[*index].trim();
-
-    let node_type = if line.starts_with("N::") { "N" } else { "V" };
-    let name_part = line
-        .strip_prefix("N::")
-        .or_else(|| line.strip_prefix("V::"))
-        .ok_or_else(|| anyhow::anyhow!("Invalid node definition"))?;
-
-    let name = name_part.trim_end_matches(" {").trim().to_string();
-    let mut properties = HashMap::new();
-
-    *index += 1;
-
-    while *index < lines.len() {
-        let prop_line = lines[*index].trim();
-
-        if prop_line == "}" {
-            *index += 1;
-            break;
-        }
-
-        if prop_line.is_empty() || prop_line.starts_with("//") {
-            *index += 1;
-            continue;
-        }
-
-        if let Some((prop_name, prop_type)) = parse_property_line(prop_line) {
-            properties.insert(prop_name, prop_type);
-        }
-
-        *index += 1;
-    }
-
-    Ok(Some(NodeType {
-        name,
-        node_type: node_type.to_string(),
-        properties,
-    }))
-}
-
-fn parse_vector_definition(
-    lines: &[&str],
-    index: &mut usize,
-) -> anyhow::Result<Option<VectorType>> {
-    let line = lines[*index].trim();
-
-    let vector_type = if line.starts_with("V::") { "V" } else { "N" };
-    let name_part = line
-        .strip_prefix("V::")
-        .or_else(|| line.strip_prefix("N::"))
-        .ok_or_else(|| anyhow::anyhow!("Invalid vector definition"))?;
-
-    let name = name_part.trim_end_matches(" {").trim().to_string();
-    let mut properties = HashMap::new();
-
-    *index += 1;
-
-    while *index < lines.len() {
-        let prop_line = lines[*index].trim();
-
-        if prop_line == "}" {
-            *index += 1;
-            break;
-        }
-
-        if prop_line.is_empty() || prop_line.starts_with("//") {
-            *index += 1;
-            continue;
-        }
-
-        if let Some((prop_name, prop_type)) = parse_property_line(prop_line) {
-            properties.insert(prop_name, prop_type);
-        }
-
-        *index += 1;
-    }
-
-    Ok(Some(VectorType {
-        name,
-        vector_type: vector_type.to_string(),
-        properties,
-    }))
-}
-
-fn parse_edge_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<EdgeType>> {
-    let line = lines[*index].trim();
-
-    let name = line
-        .strip_prefix("E::")
-        .ok_or_else(|| anyhow::anyhow!("Invalid edge definition"))?
-        .trim_end_matches(" {")
-        .trim()
-        .to_string();
-
-    let mut from_node = String::new();
-    let mut to_node = String::new();
-    let mut properties = HashMap::new();
-    let mut in_properties_section = false;
-
-    *index += 1;
-
-    while *index < lines.len() {
-        let edge_line = lines[*index].trim();
-
-        if edge_line == "}" {
-            *index += 1;
-            break;
-        }
-
-        if edge_line.is_empty() || edge_line.starts_with("//") {
-            *index += 1;
-            continue;
-        }
-
-        match edge_line {
-            l if l.starts_with("From:") => {
-                from_node = l
-                    .strip_prefix("From:")
-                    .unwrap_or("")
-                    .trim()
-                    .trim_end_matches(",")
-                    .to_string();
-            }
-            l if l.starts_with("To:") => {
-                to_node = l
-                    .strip_prefix("To:")
-                    .unwrap_or("")
-                    .trim()
-                    .trim_end_matches(",")
-                    .to_string();
-            }
-            "Properties: {" => in_properties_section = true,
-            "}" if in_properties_section => in_properties_section = false,
-            l if in_properties_section => {
-                if let Some((prop_name, prop_type)) = parse_property_line(l) {
-                    properties.insert(prop_name, prop_type);
-                }
-            }
-            _ => {}
-        }
-
-        *index += 1;
-    }
-
-    Ok(Some(EdgeType {
-        name,
-        from_node,
-        to_node,
-        properties,
-    }))
 }
 
 fn parse_property_line(line: &str) -> Option<(String, String)> {
