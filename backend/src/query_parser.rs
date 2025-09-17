@@ -7,12 +7,84 @@ pub struct QueryParameter {
     pub param_type: String,
 }
 
+impl QueryParameter {
+    /// Create a new query parameter
+    pub fn new(name: String, param_type: String) -> Self {
+        Self {
+            name,
+            param_type: map_helix_type_to_rust(&param_type),
+        }
+    }
+
+    /// Parse multiple parameters from a string
+    pub fn parse_multiple(params_str: &str) -> Vec<Self> {
+        if params_str.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let mut parameters = Vec::new();
+
+        for param in params_str.split(", ") {
+            let param = param.trim();
+            if let Some((name, param_type)) = param.split_once(": ") {
+                parameters.push(Self::new(
+                    name.trim().to_string(),
+                    param_type.trim().to_string(),
+                ));
+            }
+        }
+
+        parameters
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryDefinition {
     pub name: String,
     pub parameters: Vec<QueryParameter>,
     pub http_method: String,
     pub endpoint_path: String,
+}
+
+impl QueryDefinition {
+    /// Parse query definitions from file
+    pub fn from_file(file_path: &str) -> anyhow::Result<Vec<Self>> {
+        let content = fs::read_to_string(file_path)?;
+        let mut queries = Vec::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("QUERY ") {
+                if let Some(query_def) = Self::from_line(line) {
+                    queries.push(query_def);
+                }
+            }
+        }
+
+        Ok(queries)
+    }
+
+    /// Parse a single query definition from a line
+    pub fn from_line(line: &str) -> Option<Self> {
+        let parts: Vec<&str> = line.split(" (").collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        let name = parts[0].replace("QUERY ", "").trim().to_string();
+
+        let params_section = parts[1].split(") =>").next()?;
+        let parameters = QueryParameter::parse_multiple(params_section);
+
+        let (http_method, endpoint_path) = determine_endpoint_info(&name, &parameters);
+
+        Some(Self {
+            name,
+            parameters,
+            http_method,
+            endpoint_path,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,62 +95,47 @@ pub struct ApiEndpointInfo {
     pub parameters: Vec<QueryParameter>,
 }
 
+impl ApiEndpointInfo {
+    /// Create a new API endpoint info
+    pub fn new(path: String, method: String, query_name: String, parameters: Vec<QueryParameter>) -> Self {
+        Self {
+            path,
+            method,
+            query_name,
+            parameters,
+        }
+    }
+
+    /// Get all API endpoints from queries file
+    pub fn from_queries_file(queries_file_path: &str) -> anyhow::Result<Vec<Self>> {
+        QueryDefinition::from_file(queries_file_path).map(|query_definitions| {
+            query_definitions
+                .into_iter()
+                .map(|query| Self::new(
+                    query.endpoint_path,
+                    query.http_method,
+                    query.name,
+                    query.parameters,
+                ))
+                .collect()
+        })
+    }
+
+    /// Convert from query definition
+    pub fn from_query_definition(query: QueryDefinition) -> Self {
+        Self::new(
+            query.endpoint_path,
+            query.http_method,
+            query.name,
+            query.parameters,
+        )
+    }
+}
+
 pub fn parse_queries_file(file_path: &str) -> anyhow::Result<Vec<QueryDefinition>> {
-    let content = fs::read_to_string(file_path)?;
-    let mut queries = Vec::new();
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with("QUERY ") {
-            if let Some(query_def) = parse_query_line(line) {
-                queries.push(query_def);
-            }
-        }
-    }
-
-    Ok(queries)
+    QueryDefinition::from_file(file_path)
 }
 
-fn parse_query_line(line: &str) -> Option<QueryDefinition> {
-    let parts: Vec<&str> = line.split(" (").collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let name = parts[0].replace("QUERY ", "").trim().to_string();
-
-    let params_section = parts[1].split(") =>").next()?;
-    let parameters = parse_parameters(params_section);
-
-    let (http_method, endpoint_path) = determine_endpoint_info(&name, &parameters);
-
-    Some(QueryDefinition {
-        name,
-        parameters,
-        http_method,
-        endpoint_path,
-    })
-}
-
-fn parse_parameters(params_str: &str) -> Vec<QueryParameter> {
-    if params_str.trim().is_empty() {
-        return Vec::new();
-    }
-
-    let mut parameters = Vec::new();
-
-    for param in params_str.split(", ") {
-        let param = param.trim();
-        if let Some((name, param_type)) = param.split_once(": ") {
-            parameters.push(QueryParameter {
-                name: name.trim().to_string(),
-                param_type: map_helix_type_to_rust(param_type.trim()),
-            });
-        }
-    }
-
-    parameters
-}
 
 fn map_helix_type_to_rust(helix_type: &str) -> String {
     match helix_type {
@@ -138,17 +195,7 @@ fn convert_camel_to_kebab(camel_case: &str) -> String {
 }
 
 pub fn get_all_api_endpoints(queries_file_path: &str) -> anyhow::Result<Vec<ApiEndpointInfo>> {
-    parse_queries_file(queries_file_path).map(|query_definitions| {
-        query_definitions
-            .into_iter()
-            .map(|query| ApiEndpointInfo {
-                path: query.endpoint_path,
-                method: query.http_method,
-                query_name: query.name,
-                parameters: query.parameters,
-            })
-            .collect()
-    })
+    ApiEndpointInfo::from_queries_file(queries_file_path)
 }
 
 #[cfg(test)]
@@ -180,10 +227,10 @@ mod tests {
 
     #[test]
     fn test_determine_endpoint_info() {
-        let params = vec![QueryParameter {
-            name: "user_id".to_string(),
-            param_type: "String".to_string(),
-        }];
+        let params = vec![QueryParameter::new(
+            "user_id".to_string(),
+            "String".to_string(),
+        )];
 
         let (method, path) = determine_endpoint_info("createUser", &params);
         assert_eq!(method, "POST");
@@ -202,14 +249,14 @@ mod tests {
     #[test]
     fn test_generate_endpoint_path_with_id_params() {
         let params = vec![
-            QueryParameter {
-                name: "user_id".to_string(),
-                param_type: "String".to_string(),
-            },
-            QueryParameter {
-                name: "post_id".to_string(),
-                param_type: "String".to_string(),
-            },
+            QueryParameter::new(
+                "user_id".to_string(),
+                "String".to_string(),
+            ),
+            QueryParameter::new(
+                "post_id".to_string(),
+                "String".to_string(),
+            ),
         ];
 
         let path = generate_endpoint_path("getUserPosts", &params);
@@ -219,14 +266,14 @@ mod tests {
     #[test]
     fn test_generate_endpoint_path_without_id_params() {
         let params = vec![
-            QueryParameter {
-                name: "name".to_string(),
-                param_type: "String".to_string(),
-            },
-            QueryParameter {
-                name: "age".to_string(),
-                param_type: "i32".to_string(),
-            },
+            QueryParameter::new(
+                "name".to_string(),
+                "String".to_string(),
+            ),
+            QueryParameter::new(
+                "age".to_string(),
+                "i32".to_string(),
+            ),
         ];
 
         let path = generate_endpoint_path("getAllUsers", &params);
@@ -235,10 +282,10 @@ mod tests {
 
     #[test]
     fn test_generate_endpoint_path_with_id_param() {
-        let params = vec![QueryParameter {
-            name: "id".to_string(),
-            param_type: "String".to_string(),
-        }];
+        let params = vec![QueryParameter::new(
+            "id".to_string(),
+            "String".to_string(),
+        )];
 
         let path = generate_endpoint_path("getUser", &params);
         assert_eq!(path, "/api/query/get-user/{id}");
@@ -246,16 +293,16 @@ mod tests {
 
     #[test]
     fn test_parse_parameters_empty() {
-        let result = parse_parameters("");
+        let result = QueryParameter::parse_multiple("");
         assert!(result.is_empty());
 
-        let result = parse_parameters("   ");
+        let result = QueryParameter::parse_multiple("   ");
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_parse_parameters_single() {
-        let result = parse_parameters("name: String");
+        let result = QueryParameter::parse_multiple("name: String");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "name");
         assert_eq!(result[0].param_type, "String");
@@ -263,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_parse_parameters_multiple() {
-        let result = parse_parameters("user_id: ID, name: String, age: I32");
+        let result = QueryParameter::parse_multiple("user_id: ID, name: String, age: I32");
         assert_eq!(result.len(), 3);
 
         assert_eq!(result[0].name, "user_id");
@@ -279,7 +326,7 @@ mod tests {
     #[test]
     fn test_parse_query_line_valid() {
         let line = "QUERY getUserById (user_id: ID) => User";
-        let result = parse_query_line(line);
+        let result = QueryDefinition::from_line(line);
 
         assert!(result.is_some());
         let query = result.unwrap();
@@ -294,7 +341,7 @@ mod tests {
     #[test]
     fn test_parse_query_line_no_params() {
         let line = "QUERY getAllUsers () => [User]";
-        let result = parse_query_line(line);
+        let result = QueryDefinition::from_line(line);
 
         assert!(result.is_some());
         let query = result.unwrap();
@@ -307,11 +354,11 @@ mod tests {
     #[test]
     fn test_parse_query_line_invalid() {
         let line = "INVALID LINE";
-        let result = parse_query_line(line);
+        let result = QueryDefinition::from_line(line);
         assert!(result.is_none());
 
         let line = "QUERY incomplete";
-        let result = parse_query_line(line);
+        let result = QueryDefinition::from_line(line);
         assert!(result.is_none());
     }
 
@@ -329,7 +376,7 @@ mod tests {
         for line in content.lines() {
             let line = line.trim();
             if line.starts_with("QUERY ") {
-                if let Some(query_def) = parse_query_line(line) {
+                if let Some(query_def) = QueryDefinition::from_line(line) {
                     queries.push(query_def);
                 }
             }
