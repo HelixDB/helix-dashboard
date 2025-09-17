@@ -9,12 +9,15 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use crate::{
-    core::{schema_parser, query_parser, utils::*}, web::types::*, AppState, 
-    SCHEMA_FILE_PATH, QUERIES_FILE_PATH, DataSource
+    AppState, DataSource, QUERIES_FILE_PATH, SCHEMA_FILE_PATH,
+    core::{query_parser, schema_parser, utils::*},
+    web::types::*,
 };
 
 #[axum_macros::debug_handler]
-pub async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schema_parser::SchemaInfo> {
+pub async fn get_schema_handler(
+    State(app_state): State<AppState>,
+) -> Json<schema_parser::SchemaInfo> {
     match app_state.data_source {
         DataSource::LocalFile => match schema_parser::SchemaInfo::from_file(SCHEMA_FILE_PATH) {
             Ok(schema_info) => Json(schema_info),
@@ -93,13 +96,15 @@ pub async fn get_endpoints_handler(
     State(app_state): State<AppState>,
 ) -> Json<Vec<query_parser::ApiEndpointInfo>> {
     match app_state.data_source {
-        DataSource::LocalFile => match query_parser::ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
-            Ok(endpoints) => Json(endpoints),
-            Err(e) => {
-                eprintln!("Error getting endpoints: {e}");
-                Json(vec![])
+        DataSource::LocalFile => {
+            match query_parser::ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
+                Ok(endpoints) => Json(endpoints),
+                Err(e) => {
+                    eprintln!("Error getting endpoints: {e}");
+                    Json(vec![])
+                }
             }
-        },
+        }
         DataSource::LocalIntrospect | DataSource::Cloud => {
             match fetch_cloud_introspect(&app_state.helix_url, app_state.api_key.as_deref()).await {
                 Ok(introspect_data) => {
@@ -320,10 +325,12 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpoin
     let parameters = if let serde_json::Value::Object(params) = query.parameters {
         params
             .into_iter()
-            .map(|(name, type_val)| query_parser::QueryParameter::new(
-                name,
-                type_val.as_str().unwrap_or("String").to_string(),
-            ))
+            .map(|(name, type_val)| {
+                query_parser::QueryParameter::new(
+                    name,
+                    type_val.as_str().unwrap_or("String").to_string(),
+                )
+            })
             .collect()
     } else {
         vec![]

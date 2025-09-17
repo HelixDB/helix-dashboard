@@ -7,12 +7,12 @@ use dotenv::dotenv;
 use tower_http::cors::{Any, CorsLayer};
 
 use backend::{
-    Args, AppState, DEFAULT_PORT,
+    AppState, Args, DEFAULT_PORT,
     web::{
-        get_schema_handler, get_endpoints_handler, execute_query_handler,
-        get_nodes_edges_handler, get_nodes_by_label_handler, 
-        get_node_details_handler, get_node_connections_handler
-    }
+        execute_query_handler, get_endpoints_handler, get_node_connections_handler,
+        get_node_details_handler, get_nodes_by_label_handler, get_nodes_edges_handler,
+        get_schema_handler,
+    },
 };
 
 #[tokio::main]

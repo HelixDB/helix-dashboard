@@ -3,9 +3,9 @@
 //! This library provides the core functionality for the HelixDB dashboard backend,
 //! including schema parsing, query handling, and web API endpoints.
 
-use std::sync::Arc;
-use helix_rs::{HelixDB, HelixDBClient};
 use clap::{Parser, ValueEnum};
+use helix_rs::{HelixDB, HelixDBClient};
+use std::sync::Arc;
 
 pub mod core;
 pub mod web;
@@ -51,8 +51,9 @@ pub struct AppState {
 impl AppState {
     /// Create a new AppState from command-line arguments
     pub fn new(args: Args) -> Self {
-        let host = std::env::var("DOCKER_HOST_INTERNAL").unwrap_or_else(|_| "localhost".to_string());
-        
+        let host =
+            std::env::var("DOCKER_HOST_INTERNAL").unwrap_or_else(|_| "localhost".to_string());
+
         let helix_url = match args.source {
             DataSource::LocalIntrospect => {
                 let url = format!("http://{}:{}", host, args.port);
@@ -77,7 +78,9 @@ impl AppState {
                 println!("Starting server in cloud mode");
                 println!("Using cloud HelixDB endpoint: {url}/introspect");
                 if has_api_key {
-                    println!("Authentication: Using API key from HELIX_API_KEY environment variable");
+                    println!(
+                        "Authentication: Using API key from HELIX_API_KEY environment variable"
+                    );
                 } else {
                     println!("Authentication: No API key found, connecting without authentication");
                 }
