@@ -9,7 +9,7 @@ use dotenv::dotenv;
 use helix_rs::{HelixDB, HelixDBClient};
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Number, Value, json};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -64,17 +64,13 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // Use host.docker.internal when running in Docker, localhost otherwise
-    let host = std::env::var("DOCKER_HOST_INTERNAL")
-        .unwrap_or_else(|_| "localhost".to_string());
+    let host = std::env::var("DOCKER_HOST_INTERNAL").unwrap_or_else(|_| "localhost".to_string());
 
     let helix_url = match args.source {
         DataSource::LocalIntrospect => {
             let url = format!("http://{}:{}", host, args.port);
             println!("Starting server in local-introspect mode");
-            println!(
-                "Using local HelixDB introspect endpoint: {}/introspect",
-                url
-            );
+            println!("Using local HelixDB introspect endpoint: {url}/introspect");
             url
         }
         DataSource::LocalFile => {
@@ -92,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
                 .filter(|key| !key.trim().is_empty())
                 .is_some();
             println!("Starting server in cloud mode");
-            println!("Using cloud HelixDB endpoint: {}/introspect", url);
+            println!("Using cloud HelixDB endpoint: {url}/introspect");
             if has_api_key {
                 println!("Authentication: Using API key from HELIX_API_KEY environment variable");
             } else {
@@ -119,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         DataSource::LocalIntrospect | DataSource::LocalFile => Arc::new(HelixDB::new(
-            Some(&format!("http://{}", host)),
+            Some(&format!("http://{host}")),
             Some(args.port),
             None,
         )),
@@ -151,9 +147,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", DEFAULT_PORT)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{DEFAULT_PORT}")).await?;
 
-    println!("Server running on http://0.0.0.0:{}", DEFAULT_PORT);
+    println!("Server running on http://0.0.0.0:{DEFAULT_PORT}");
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -214,7 +210,7 @@ async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schema_pa
         DataSource::LocalFile => match schema_parser::parse_schema_file(SCHEMA_FILE_PATH) {
             Ok(schema_info) => Json(schema_info),
             Err(e) => {
-                eprintln!("Error parsing schema: {}", e);
+                eprintln!("Error parsing schema: {e}");
                 Json(create_empty_schema())
             }
         },
@@ -276,9 +272,9 @@ async fn execute_query_handler(
     match app_state.helix_db.query(&query_name, &params_value).await {
         Ok(result) => Json(sort_json_object(result)),
         Err(e) => {
-            eprintln!("Error executing query '{}': {}", query_name, e);
+            eprintln!("Error executing query '{query_name}': {e}");
             Json(json!({
-                "error": format!("Failed to execute query: {}", e),
+                "error": format!("Failed to execute query: {e}"),
                 "query": query_name
             }))
         }
@@ -292,7 +288,7 @@ async fn get_query_param_types(
 ) -> std::collections::HashMap<String, String> {
     let mut param_types = std::collections::HashMap::new();
 
-    match fetch_cloud_introspect(&app_state.helix_url, api_key.as_deref()).await {
+    match fetch_cloud_introspect(&app_state.helix_url, api_key).await {
         Ok(introspect_data) => {
             for query in introspect_data.queries {
                 if query.name == query_name {
@@ -308,10 +304,7 @@ async fn get_query_param_types(
             }
         }
         Err(e) => {
-            eprintln!(
-                "Warning: Could not fetch introspect data for parameter types: {}",
-                e
-            );
+            eprintln!("Warning: Could not fetch introspect data for parameter types: {e}");
         }
     }
 
@@ -319,73 +312,63 @@ async fn get_query_param_types(
 }
 
 fn convert_string_to_type(value: &str, param_type: &str) -> serde_json::Value {
-    match param_type {
-        "String" => serde_json::Value::String(value.to_string()),
-        "ID" => serde_json::Value::String(value.to_string()),
-        "I32" => match value.parse::<i32>() {
-            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
-            Err(_) => serde_json::Value::String(value.to_string()),
-        },
-        "I64" => match value.parse::<i64>() {
-            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
-            Err(_) => serde_json::Value::String(value.to_string()),
-        },
-        "U32" => match value.parse::<u32>() {
-            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
-            Err(_) => serde_json::Value::Number(serde_json::Number::from(0u32)),
-        },
-        "U64" => match value.parse::<u64>() {
-            Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
-            Err(_) => serde_json::Value::Number(serde_json::Number::from(0u64)),
-        },
-        "U128" => match value.parse::<u128>() {
-            Ok(num) => serde_json::Value::Number(
-                serde_json::Number::from_f64(num as f64).unwrap_or(serde_json::Number::from(0)),
-            ),
-            Err(_) => serde_json::Value::Number(
-                serde_json::Number::from_f64(0.0).unwrap_or(serde_json::Number::from(0)),
-            ),
-        },
-        "F64" => match value.parse::<f64>() {
-            Ok(num) => serde_json::Value::Number(
-                serde_json::Number::from_f64(num).unwrap_or(serde_json::Number::from(0)),
-            ),
-            Err(_) => serde_json::Value::String(value.to_string()),
-        },
-        "Array(F64)" => {
-            if let Ok(parsed) = serde_json::from_str::<Vec<f64>>(value) {
-                return serde_json::Value::Array(
-                    parsed
-                        .into_iter()
-                        .map(|n| {
-                            serde_json::Value::Number(
-                                serde_json::Number::from_f64(n)
-                                    .unwrap_or(serde_json::Number::from(0)),
-                            )
-                        })
-                        .collect(),
-                );
-            }
-            let nums: Result<Vec<f64>, _> =
-                value.split(',').map(|s| s.trim().parse::<f64>()).collect();
+    let parse_number = |v: &str| -> Option<Number> {
+        Number::from_f64(v.parse().ok()?).or_else(|| Some(Number::from(0)))
+    };
 
-            match nums {
-                Ok(numbers) => serde_json::Value::Array(
-                    numbers
-                        .into_iter()
-                        .map(|n| {
-                            serde_json::Value::Number(
-                                serde_json::Number::from_f64(n)
-                                    .unwrap_or(serde_json::Number::from(0)),
-                            )
-                        })
-                        .collect(),
-                ),
-                Err(_) => serde_json::Value::String(value.to_string()),
-            }
-        }
-        _ => serde_json::Value::String(value.to_string()),
+    match param_type {
+        "String" | "ID" => Value::String(value.to_string()),
+        "I32" => value
+            .parse::<i32>()
+            .map(|n| Value::Number(Number::from(n)))
+            .unwrap_or_else(|_| Value::String(value.to_string())),
+        "I64" => value
+            .parse::<i64>()
+            .map(|n| Value::Number(Number::from(n)))
+            .unwrap_or_else(|_| Value::String(value.to_string())),
+        "U32" => value
+            .parse::<u32>()
+            .map(|n| Value::Number(Number::from(n)))
+            .unwrap_or_else(|_| Value::Number(Number::from(0u32))),
+        "U64" => value
+            .parse::<u64>()
+            .map(|n| Value::Number(Number::from(n)))
+            .unwrap_or_else(|_| Value::Number(Number::from(0u64))),
+        "U128" => value
+            .parse::<u128>()
+            .ok()
+            .and_then(|n| parse_number(&(n as f64).to_string()))
+            .map(Value::Number)
+            .unwrap_or_else(|| Value::Number(Number::from(0))),
+        "F64" => value
+            .parse::<f64>()
+            .ok()
+            .and_then(|n| parse_number(&n.to_string()))
+            .map(Value::Number)
+            .unwrap_or_else(|| Value::String(value.to_string())),
+        "Array(F64)" => parse_f64_array(value),
+        _ => Value::String(value.to_string()),
     }
+}
+
+fn parse_f64_array(value: &str) -> serde_json::Value {
+    serde_json::from_str::<Vec<f64>>(value)
+        .or_else(|_| {
+            value
+                .split(',')
+                .map(|s| s.trim().parse::<f64>())
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map(|numbers| {
+            serde_json::Value::Array(
+                numbers
+                    .into_iter()
+                    .filter_map(serde_json::Number::from_f64)
+                    .map(serde_json::Value::Number)
+                    .collect(),
+            )
+        })
+        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()))
 }
 
 #[axum_macros::debug_handler]
@@ -396,7 +379,7 @@ async fn get_endpoints_handler(
         DataSource::LocalFile => match query_parser::get_all_api_endpoints(QUERIES_FILE_PATH) {
             Ok(endpoints) => Json(endpoints),
             Err(e) => {
-                eprintln!("Error getting endpoints: {}", e);
+                eprintln!("Error getting endpoints: {e}");
                 Json(vec![])
             }
         },
@@ -407,7 +390,7 @@ async fn get_endpoints_handler(
                         .queries
                         .into_iter()
                         .map(map_query_to_endpoint)
-                        .collect();
+                        .collect::<Vec<_>>();
                     Json(endpoints)
                 }
                 Err(e) => {
@@ -446,17 +429,16 @@ fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpointInf
 }
 
 fn determine_http_method(query_name: &str) -> &'static str {
-    if query_name.starts_with("create")
-        || query_name.starts_with("add")
-        || query_name.starts_with("assign")
-    {
-        "POST"
-    } else if query_name.starts_with("update") {
-        "PUT"
-    } else if query_name.starts_with("delete") || query_name.starts_with("remove") {
-        "DELETE"
-    } else {
-        "GET"
+    match query_name {
+        name if name.starts_with("create")
+            || name.starts_with("add")
+            || name.starts_with("assign") =>
+        {
+            "POST"
+        }
+        name if name.starts_with("update") => "PUT",
+        name if name.starts_with("delete") || name.starts_with("remove") => "DELETE",
+        _ => "GET",
     }
 }
 
@@ -477,7 +459,7 @@ async fn fetch_cloud_introspect(
     api_key: Option<&str>,
 ) -> anyhow::Result<CloudIntrospectData> {
     let client = reqwest::Client::new();
-    let url = format!("{}/introspect", helix_url);
+    let url = format!("{helix_url}/introspect");
     let mut request = client.get(&url);
 
     if let Some(api_key) = api_key {
@@ -497,41 +479,26 @@ async fn fetch_cloud_introspect(
 fn sort_json_object(value: Value) -> Value {
     match value {
         Value::Object(map) => {
-            let mut sorted_map = serde_json::Map::new();
+            let (numeric, non_numeric): (Vec<_>, Vec<_>) = map
+                .into_iter()
+                .map(|(key, val)| (key, sort_json_object(val)))
+                .partition(|(key, _)| key.chars().all(|c| c.is_numeric()));
 
-            let mut numeric_keys: Vec<(String, Value)> = vec![];
-            let mut id_key: Option<(String, Value)> = None;
-            let mut other_keys: Vec<(String, Value)> = vec![];
+            let (id, other): (Vec<_>, Vec<_>) =
+                non_numeric.into_iter().partition(|(key, _)| key == "id");
 
-            for (key, val) in map {
-                let sorted_val = sort_json_object(val);
-
-                if key.chars().all(|c| c.is_numeric()) {
-                    numeric_keys.push((key, sorted_val));
-                } else if key == "id" {
-                    id_key = Some((key, sorted_val));
-                } else {
-                    other_keys.push((key, sorted_val));
-                }
-            }
-
-            numeric_keys.sort_by(|(a, _), (b, _)| {
+            let mut sorted_numeric = numeric;
+            sorted_numeric.sort_by(|(a, _), (b, _)| {
                 a.parse::<u64>()
                     .unwrap_or(0)
                     .cmp(&b.parse::<u64>().unwrap_or(0))
             });
 
-            for (k, v) in numeric_keys {
-                sorted_map.insert(k, v);
-            }
-            if let Some((k, v)) = id_key {
-                sorted_map.insert(k, v);
-            }
-            for (k, v) in other_keys {
-                sorted_map.insert(k, v);
-            }
-
-            Value::Object(sorted_map)
+            [sorted_numeric, id, other]
+                .into_iter()
+                .flatten()
+                .collect::<serde_json::Map<_, _>>()
+                .into()
         }
         Value::Array(arr) => Value::Array(arr.into_iter().map(sort_json_object).collect()),
         other => other,
@@ -569,11 +536,11 @@ async fn get_nodes_edges_handler(
     let mut query_params = vec![];
 
     if let Some(limit) = validate_limit(params.limit) {
-        query_params.push(format!("limit={}", limit));
+        query_params.push(format!("limit={limit}"));
     }
 
     if let Some(node_label) = params.node_label {
-        query_params.push(format!("node_label={}", node_label));
+        query_params.push(format!("node_label={node_label}"));
     }
 
     if !query_params.is_empty() {
@@ -591,9 +558,9 @@ async fn get_nodes_edges_handler(
     match make_http_request_with_auth(&client, &url, api_key).await {
         Ok(data) => Json(data),
         Err(e) => {
-            eprintln!("Error with nodes-edges request: {}", e);
+            eprintln!("Error with nodes-edges request: {e}");
             Json(json!({
-                "error": format!("Request failed: {}", e),
+                "error": format!("Request failed: {e}"),
                 "data": create_default_error_data()
             }))
         }
@@ -616,9 +583,9 @@ async fn get_node_details_handler(
     match make_http_request_with_auth(&client, &url, api_key).await {
         Ok(data) => Json(data),
         Err(e) => {
-            eprintln!("Error with node-details request: {}", e);
+            eprintln!("Error with node-details request: {e}");
             Json(json!({
-                "error": format!("Request failed: {}", e),
+                "error": format!("Request failed: {e}"),
                 "data": json!({})
             }))
         }
@@ -636,7 +603,7 @@ async fn get_nodes_by_label_handler(
     query_params.push(format!("label={}", params.label));
 
     if let Some(limit) = validate_limit(params.limit) {
-        query_params.push(format!("limit={}", limit));
+        query_params.push(format!("limit={limit}"));
     }
 
     if !query_params.is_empty() {
@@ -654,9 +621,9 @@ async fn get_nodes_by_label_handler(
     match make_http_request_with_auth(&client, &url, api_key).await {
         Ok(data) => Json(data),
         Err(e) => {
-            eprintln!("Error with nodes-by-label request: {}", e);
+            eprintln!("Error with nodes-by-label request: {e}");
             Json(json!({
-                "error": format!("Request failed: {}", e),
+                "error": format!("Request failed: {e}"),
                 "data": create_default_error_data()
             }))
         }
@@ -683,9 +650,9 @@ async fn get_node_connections_handler(
     match make_http_request_with_auth(&client, &url, api_key).await {
         Ok(data) => Json(data),
         Err(e) => {
-            eprintln!("Error with node-connections request: {}", e);
+            eprintln!("Error with node-connections request: {e}");
             let mut error_response = json!({
-                "error": format!("Request failed: {}", e)
+                "error": format!("Request failed: {e}")
             });
 
             if let serde_json::Value::Object(ref mut map) = error_response {
@@ -698,6 +665,238 @@ async fn get_node_connections_handler(
             }
 
             Json(error_response)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_limit_valid() {
+        assert_eq!(validate_limit(Some(100)), Some(100));
+        assert_eq!(validate_limit(Some(300)), Some(300));
+        assert_eq!(validate_limit(Some(1)), Some(1));
+    }
+
+    #[test]
+    fn test_validate_limit_exceeds_max() {
+        assert_eq!(validate_limit(Some(301)), None);
+        assert_eq!(validate_limit(Some(1000)), None);
+    }
+
+    #[test]
+    fn test_validate_limit_none() {
+        assert_eq!(validate_limit(None), None);
+    }
+
+    #[test]
+    fn test_determine_http_method() {
+        assert_eq!(determine_http_method("createUser"), "POST");
+        assert_eq!(determine_http_method("addUser"), "POST");
+        assert_eq!(determine_http_method("assignRole"), "POST");
+
+        assert_eq!(determine_http_method("updateUser"), "PUT");
+
+        assert_eq!(determine_http_method("deleteUser"), "DELETE");
+        assert_eq!(determine_http_method("removeUser"), "DELETE");
+
+        assert_eq!(determine_http_method("getUser"), "GET");
+        assert_eq!(determine_http_method("findUser"), "GET");
+        assert_eq!(determine_http_method("listUsers"), "GET");
+    }
+
+    #[test]
+    fn test_convert_string_to_type_string() {
+        let result = convert_string_to_type("hello", "String");
+        assert_eq!(result, serde_json::Value::String("hello".to_string()));
+
+        let result = convert_string_to_type("123", "ID");
+        assert_eq!(result, serde_json::Value::String("123".to_string()));
+    }
+
+    #[test]
+    fn test_convert_string_to_type_integers() {
+        let result = convert_string_to_type("42", "I32");
+        assert_eq!(
+            result,
+            serde_json::Value::Number(serde_json::Number::from(42))
+        );
+
+        let result = convert_string_to_type("invalid", "I32");
+        assert_eq!(result, serde_json::Value::String("invalid".to_string()));
+
+        let result = convert_string_to_type("123", "I64");
+        assert_eq!(
+            result,
+            serde_json::Value::Number(serde_json::Number::from(123i64))
+        );
+    }
+
+    #[test]
+    fn test_convert_string_to_type_unsigned() {
+        let result = convert_string_to_type("42", "U32");
+        assert_eq!(
+            result,
+            serde_json::Value::Number(serde_json::Number::from(42u32))
+        );
+
+        let result = convert_string_to_type("invalid", "U32");
+        assert_eq!(
+            result,
+            serde_json::Value::Number(serde_json::Number::from(0u32))
+        );
+
+        let result = convert_string_to_type("123", "U64");
+        assert_eq!(
+            result,
+            serde_json::Value::Number(serde_json::Number::from(123u64))
+        );
+    }
+
+    #[test]
+    fn test_convert_string_to_type_float() {
+        let result = convert_string_to_type("3.14", "F64");
+        if let serde_json::Value::Number(num) = result {
+            assert_eq!(num.as_f64(), Some(3.14));
+        } else {
+            panic!("Expected number");
+        }
+
+        let result = convert_string_to_type("invalid", "F64");
+        assert_eq!(result, serde_json::Value::String("invalid".to_string()));
+    }
+
+    #[test]
+    fn test_convert_string_to_type_array_f64() {
+        let result = convert_string_to_type("[1.0, 2.0, 3.0]", "Array(F64)");
+        if let serde_json::Value::Array(arr) = result {
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0].as_f64(), Some(1.0));
+            assert_eq!(arr[1].as_f64(), Some(2.0));
+            assert_eq!(arr[2].as_f64(), Some(3.0));
+        } else {
+            panic!("Expected array");
+        }
+
+        let result = convert_string_to_type("1.0, 2.0, 3.0", "Array(F64)");
+        if let serde_json::Value::Array(arr) = result {
+            assert_eq!(arr.len(), 3);
+        } else {
+            panic!("Expected array");
+        }
+
+        let result = convert_string_to_type("invalid", "Array(F64)");
+        assert_eq!(result, serde_json::Value::String("invalid".to_string()));
+    }
+
+    #[test]
+    fn test_convert_string_to_type_unknown() {
+        let result = convert_string_to_type("value", "UnknownType");
+        assert_eq!(result, serde_json::Value::String("value".to_string()));
+    }
+
+    #[test]
+    fn test_sort_json_object_basic() {
+        let input = json!({
+            "name": "John",
+            "id": "123",
+            "2": "second",
+            "1": "first"
+        });
+
+        let result = sort_json_object(input);
+        if let serde_json::Value::Object(map) = result {
+            let keys: Vec<_> = map.keys().collect();
+            assert_eq!(keys, vec!["1", "2", "id", "name"]);
+        } else {
+            panic!("Expected object");
+        }
+    }
+
+    #[test]
+    fn test_sort_json_object_nested() {
+        let input = json!({
+            "data": {
+                "3": "third",
+                "1": "first",
+                "name": "test"
+            },
+            "id": "main"
+        });
+
+        let result = sort_json_object(input);
+        if let serde_json::Value::Object(map) = result {
+            if let Some(serde_json::Value::Object(nested)) = map.get("data") {
+                let keys: Vec<_> = nested.keys().collect();
+                assert_eq!(keys, vec!["1", "3", "name"]);
+            } else {
+                panic!("Expected nested object");
+            }
+        } else {
+            panic!("Expected object");
+        }
+    }
+
+    #[test]
+    fn test_sort_json_object_array() {
+        let input = json!([
+            {"name": "B", "1": "first"},
+            {"name": "A", "2": "second"}
+        ]);
+
+        let result = sort_json_object(input);
+        if let serde_json::Value::Array(arr) = result {
+            assert_eq!(arr.len(), 2);
+            for item in arr {
+                if let serde_json::Value::Object(obj) = item {
+                    let keys: Vec<_> = obj.keys().collect();
+                    if keys.iter().any(|k| *k == "1") {
+                        assert_eq!(keys, vec!["1", "name"]);
+                    } else {
+                        assert_eq!(keys, vec!["2", "name"]);
+                    }
+                }
+            }
+        } else {
+            panic!("Expected array");
+        }
+    }
+
+    #[test]
+    fn test_create_empty_schema() {
+        let schema = create_empty_schema();
+        assert!(schema.nodes.is_empty());
+        assert!(schema.edges.is_empty());
+        assert!(schema.vectors.is_empty());
+    }
+
+    #[test]
+    fn test_create_default_error_data() {
+        let error_data = create_default_error_data();
+        if let serde_json::Value::Object(map) = error_data {
+            assert!(map.contains_key("nodes"));
+            assert!(map.contains_key("edges"));
+            assert!(map.contains_key("vectors"));
+
+            if let Some(serde_json::Value::Array(nodes)) = map.get("nodes") {
+                assert!(nodes.is_empty());
+            }
+        } else {
+            panic!("Expected object");
+        }
+    }
+
+    #[test]
+    fn test_create_node_connections_error_data() {
+        let error_data = create_node_connections_error_data();
+        if let serde_json::Value::Object(map) = error_data {
+            assert!(map.contains_key("connected_nodes"));
+            assert!(map.contains_key("incoming_edges"));
+            assert!(map.contains_key("outgoing_edges"));
+        } else {
+            panic!("Expected object");
         }
     }
 }
