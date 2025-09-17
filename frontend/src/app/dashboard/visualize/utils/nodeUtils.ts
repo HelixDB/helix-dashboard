@@ -1,5 +1,46 @@
-import { DataItem, GraphNode } from '../types';
+import { DataItem, SchemaVisualizationResponseV1, NodeDetailsResponseV1 } from '@/lib/api-client/types';
+import { fetchNodeDetails, fetchNodesAndEdges } from '@/lib/api-client/requests';
 
+
+/**
+ * Graph node with visualization properties
+ */
+export interface GraphNode {
+    id: string;
+    originalData: DataItem;
+    color: string;
+    x: number;
+    y: number;
+    fx?: number;
+    fy?: number;
+    __hitType?: 'circle' | 'rect';
+    __hitSize?: number;
+    __hitDimensions?: [number, number];
+    __cardDimensions?: [number, number];
+    __moreBounds?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    __expandBounds?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+  }
+  
+  /**
+   * Graph link between nodes
+   */
+  export interface GraphLink {
+    source: string;
+    target: string;
+    label: string;
+    isVirtual: boolean;
+  }
+  
 export const getNodeColor = (item: DataItem): string => {
     const label = item.label || 'Entity';
 
@@ -110,3 +151,100 @@ export const getRenderMode = (
         return { mode: 'simple', detailOpacity: 0 };
     }
 };
+
+// ============================================================================
+// DATA MUTATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Fetches details for multiple nodes in batches and merges with existing data
+ */
+export async function fetchNodeDetailsForNodes(
+    nodes: Map<string, DataItem>
+): Promise<Map<string, DataItem>> {
+    const nodeIds = Array.from(nodes.keys());
+    const batchSize = 10;
+    const updatedNodes = new Map(nodes);
+
+    for (let i = 0; i < nodeIds.length; i += batchSize) {
+        const batch = nodeIds.slice(i, i + batchSize);
+
+        const batchPromises = batch.map(async (nodeId) => {
+            try {
+                const details = await fetchNodeDetails(nodeId);
+                return { nodeId, details };
+            } catch {
+                return null;
+            }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        batchResults.forEach((result) => {
+            if (result && result.details) {
+                const existingNode = updatedNodes.get(result.nodeId);
+                if (existingNode) {
+                    let nodeData = null;
+
+                    if (result.details.data?.found && result.details.data?.node) {
+                        nodeData = result.details.data.node;
+                    } else if (result.details.data) {
+                        nodeData = result.details.data.data;
+                    } else {
+                        nodeData = result.details.data;
+                    }
+
+                    if (nodeData && typeof nodeData === 'object') {
+                        updatedNodes.set(result.nodeId, {
+                            ...existingNode,
+                            ...nodeData,
+                            id: result.nodeId
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    return updatedNodes;
+}
+
+/**
+ * Discovers node types from existing data when schema is not available
+ */
+export async function discoverNodeTypesFromData(): Promise<SchemaVisualizationResponseV1> {
+    try {
+            const result = await fetchNodesAndEdges(100);
+            const nodes = result.data?.nodes || [];
+        const nodeTypes = new Set<string>();
+
+        for (let i = 0; i < Math.min(nodes.length, 20); i++) {
+            const node = nodes[i];
+            try {
+                const details = await fetchNodeDetails(node.id);
+                let nodeData = null;
+
+                if (details.data?.found && details.data?.node) {
+                    nodeData = details.data.node;
+                } else if (details.data) {
+                    nodeData = details.data.data;
+                } else {
+                    nodeData = details.data;
+                }
+
+                if (nodeData && typeof nodeData === 'object' && 'label' in nodeData && typeof nodeData.label === 'string') {
+                    nodeTypes.add(nodeData.label);
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        return {
+            nodes: Array.from(nodeTypes).map(type => ({ name: type, properties: [] })),
+            edges: []
+        };
+    } catch {
+        return { nodes: [], edges: [] };
+    }
+}

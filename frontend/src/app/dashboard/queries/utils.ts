@@ -1,30 +1,17 @@
-interface ApiEndpointInfo {
-    path: string;
-    method: string;
-    query_name: string;
-    parameters: Array<{
-        name: string;
-        param_type: string;
-    }>;
-}
+import {
+    ApiEndpointResponseV1,
+    EndpointConfig,
+    EndpointParameter,
+    HelixParamType,
+    HelixValue,
+    ParameterValues,
+    isHelixParamType,
+} from '@/lib/api-client/types';
 
-interface EndpointConfig {
-    name: string;
-    method: string;
-    url: string;
-    description: string;
-    params: Array<{
-        name: string;
-        type: string;
-        param_type: string;
-        required: boolean;
-        description: string;
-    }>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    body?: any;
-}
-
-function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
+/**
+ * Converts raw backend API endpoint info to frontend-friendly format
+ */
+export function convertToFrontendFormat(apiEndpoint: ApiEndpointResponseV1): EndpointConfig {
     const name = apiEndpoint.query_name
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, str => str.toUpperCase())
@@ -43,22 +30,22 @@ function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
         description = `Execute ${apiEndpoint.query_name} query`;
     }
 
-    const params = apiEndpoint.parameters.map(param => ({
+    const params: EndpointParameter[] = apiEndpoint.parameters.map(param => ({
         name: param.name,
-        type: 'query',
-        param_type: param.param_type,
+        type: 'query' as const,
+        param_type: isHelixParamType(param.param_type) ? param.param_type : 'string',
         required: true,
         description: generateParamDescription(param.name)
     }));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let body: any = undefined;
+    let body: ParameterValues | undefined = undefined;
     if (apiEndpoint.method === 'POST' || apiEndpoint.method === 'PUT') {
         body = {};
         apiEndpoint.parameters
             .filter(p => !p.name.endsWith('_id') && p.name !== 'id')
             .forEach(param => {
-                body[param.name] = getDefaultValueForType(param.param_type);
+                const paramType = isHelixParamType(param.param_type) ? param.param_type : 'string';
+                body![param.name] = getDefaultValueForType(paramType);
             });
     }
 
@@ -74,7 +61,10 @@ function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
     };
 }
 
-function extractEntityName(queryName: string): string {
+/**
+ * Extracts entity name from query name for description generation
+ */
+export function extractEntityName(queryName: string): string {
     const withoutPrefix = queryName
         .replace(/^(create|get|update|delete|add|remove|assign|link)/, '')
         .replace(/^(All|By)/, '');
@@ -86,7 +76,10 @@ function extractEntityName(queryName: string): string {
         .replace(/s$/, '') || 'entity';
 }
 
-function generateParamDescription(paramName: string): string {
+/**
+ * Generates human-readable description for parameter names
+ */
+export function generateParamDescription(paramName: string): string {
     if (paramName.endsWith('_id') || paramName === 'id') {
         const entityName = paramName.replace('_id', '').replace(/([A-Z])/g, ' $1').toLowerCase();
         return `${entityName.charAt(0).toUpperCase()}${entityName.slice(1)} identifier`;
@@ -101,9 +94,11 @@ function generateParamDescription(paramName: string): string {
     return `${readable.charAt(0).toUpperCase()}${readable.slice(1)} value`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getDefaultValueForType(paramType: string): any {
-    const normalizedType = paramType.toLowerCase();
+/**
+ * Returns default value for a given Helix parameter type
+ */
+export function getDefaultValueForType(paramType: HelixParamType): HelixValue {
+    const normalizedType = paramType.toLowerCase() as HelixParamType;
 
     switch (normalizedType) {
         case 'string':
@@ -126,13 +121,15 @@ function getDefaultValueForType(paramType: string): any {
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function convertParamValue(value: string, paramType: string): any {
+/**
+ * Converts string input value to proper typed value based on parameter type
+ */
+export function convertParamValue(value: string, paramType: HelixParamType): HelixValue {
     if (!value.trim()) {
         return getDefaultValueForType(paramType);
     }
 
-    const normalizedType = paramType.toLowerCase();
+    const normalizedType = paramType.toLowerCase() as HelixParamType;
 
     switch (normalizedType) {
         case 'string':
@@ -174,47 +171,12 @@ export function convertParamValue(value: string, paramType: string): any {
     }
 }
 
-function generateEndpointKey(queryName: string): string {
+/**
+ * Generates kebab-case key from camelCase query name
+ */
+export function generateEndpointKey(queryName: string): string {
     return queryName
         .replace(/([A-Z])/g, '-$1')
         .toLowerCase()
         .replace(/^-/, '');
-}
-
-export async function fetchEndpoints(): Promise<Record<string, EndpointConfig>> {
-    try {
-        const response = await fetch('http://localhost:8080/api/endpoints');
-        if (!response.ok) {
-            throw new Error(`Failed to fetch endpoints: ${response.status}`);
-        }
-
-        const apiEndpoints: ApiEndpointInfo[] = await response.json();
-        const endpoints: Record<string, EndpointConfig> = {};
-
-        apiEndpoints.forEach(apiEndpoint => {
-            const key = generateEndpointKey(apiEndpoint.query_name);
-            endpoints[key] = convertToFrontendFormat(apiEndpoint);
-        });
-
-        return endpoints;
-    } catch (error) {
-        console.error('Failed to fetch endpoints from backend:', error);
-        return {};
-    }
-}
-
-let endpointsCache: Record<string, EndpointConfig> | null = null;
-
-export async function getEndpoints(): Promise<Record<string, EndpointConfig>> {
-    if (endpointsCache) {
-        return endpointsCache;
-    }
-
-    endpointsCache = await fetchEndpoints();
-    return endpointsCache;
-}
-
-
-export function clearEndpointsCache(): void {
-    endpointsCache = null;
 }
