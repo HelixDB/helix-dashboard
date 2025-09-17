@@ -61,7 +61,46 @@ impl SchemaInfo {
 
     /// Parse schema from content string
     pub fn from_content(content: &str) -> anyhow::Result<Self> {
-        parse_schema_content(content)
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        let mut vectors = Vec::new();
+
+        let lines: Vec<&str> = content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let line = lines[i].trim();
+
+            if line.is_empty() || line.starts_with("//") {
+                i += 1;
+                continue;
+            }
+
+            match line {
+                l if l.starts_with("N::") => {
+                    if let Some(node) = parse_node_definition(&lines, &mut i)? {
+                        nodes.push(node);
+                    }
+                }
+                l if l.starts_with("V::") => {
+                    if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
+                        vectors.push(vector);
+                    }
+                }
+                l if l.starts_with("E::") => {
+                    if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
+                        edges.push(edge);
+                    }
+                }
+                _ => i += 1,
+            }
+        }
+
+        Ok(Self {
+            nodes,
+            edges,
+            vectors,
+        })
     }
 }
 
@@ -71,53 +110,6 @@ impl Default for SchemaInfo {
     }
 }
 
-pub fn parse_schema_file(file_path: &str) -> anyhow::Result<SchemaInfo> {
-    let content = fs::read_to_string(file_path)?;
-    parse_schema_content(&content)
-}
-
-pub fn parse_schema_content(content: &str) -> anyhow::Result<SchemaInfo> {
-    let mut nodes = Vec::new();
-    let mut edges = Vec::new();
-    let mut vectors = Vec::new();
-
-    let lines: Vec<&str> = content.lines().collect();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let line = lines[i].trim();
-
-        if line.is_empty() || line.starts_with("//") {
-            i += 1;
-            continue;
-        }
-
-        match line {
-            l if l.starts_with("N::") => {
-                if let Some(node) = parse_node_definition(&lines, &mut i)? {
-                    nodes.push(node);
-                }
-            }
-            l if l.starts_with("V::") => {
-                if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
-                    vectors.push(vector);
-                }
-            }
-            l if l.starts_with("E::") => {
-                if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
-                    edges.push(edge);
-                }
-            }
-            _ => i += 1,
-        }
-    }
-
-    Ok(SchemaInfo {
-        nodes,
-        edges,
-        vectors,
-    })
-}
 
 fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<NodeType>> {
     let line = lines[*index].trim();
@@ -338,7 +330,7 @@ mod tests {
     #[test]
     fn test_parse_schema_content_empty() {
         let content = "";
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert!(result.nodes.is_empty());
         assert!(result.edges.is_empty());
         assert!(result.vectors.is_empty());
@@ -350,7 +342,7 @@ mod tests {
             // This is a comment
             // Another comment
         "#;
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert!(result.nodes.is_empty());
         assert!(result.edges.is_empty());
         assert!(result.vectors.is_empty());
@@ -364,7 +356,7 @@ mod tests {
                 age: I32
             }
         "#;
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert_eq!(result.nodes.len(), 1);
 
         let node = &result.nodes[0];
@@ -382,7 +374,7 @@ mod tests {
                 dimension: I32
             }
         "#;
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert_eq!(result.vectors.len(), 1);
 
         let vector = &result.vectors[0];
@@ -407,7 +399,7 @@ mod tests {
                 }
             }
         "#;
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert_eq!(result.edges.len(), 1);
 
         let edge = &result.edges[0];
@@ -434,7 +426,7 @@ mod tests {
                 content: String
             }
         "#;
-        let result = parse_schema_content(content).unwrap();
+        let result = SchemaInfo::from_content(content).unwrap();
         assert_eq!(result.nodes.len(), 1);
         assert_eq!(result.edges.len(), 1);
         assert_eq!(result.vectors.len(), 1);

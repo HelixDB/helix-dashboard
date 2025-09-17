@@ -132,9 +132,6 @@ impl ApiEndpointInfo {
     }
 }
 
-pub fn parse_queries_file(file_path: &str) -> anyhow::Result<Vec<QueryDefinition>> {
-    QueryDefinition::from_file(file_path)
-}
 
 
 fn map_helix_type_to_rust(helix_type: &str) -> String {
@@ -194,9 +191,6 @@ fn convert_camel_to_kebab(camel_case: &str) -> String {
         })
 }
 
-pub fn get_all_api_endpoints(queries_file_path: &str) -> anyhow::Result<Vec<ApiEndpointInfo>> {
-    ApiEndpointInfo::from_queries_file(queries_file_path)
-}
 
 #[cfg(test)]
 mod tests {

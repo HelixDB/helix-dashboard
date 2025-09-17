@@ -2,12 +2,11 @@
 
 use serde_json::{Number, Value, json};
 use reqwest::Client as HttpClient;
-use crate::{schema_parser, MAX_LIMIT};
+use crate::MAX_LIMIT;
 
-/// Create an empty schema structure
-pub fn create_empty_schema() -> schema_parser::SchemaInfo {
-    schema_parser::SchemaInfo::new()
-}
+#[cfg(test)]
+use crate::schema_parser;
+
 
 /// Create default error data structure
 pub fn create_default_error_data() -> serde_json::Value {
@@ -328,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_create_empty_schema() {
-        let schema = create_empty_schema();
+        let schema = schema_parser::SchemaInfo::new();
         assert!(schema.nodes.is_empty());
         assert!(schema.edges.is_empty());
         assert!(schema.vectors.is_empty());

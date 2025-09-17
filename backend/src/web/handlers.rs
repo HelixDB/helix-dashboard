@@ -16,11 +16,11 @@ use crate::{
 #[axum_macros::debug_handler]
 pub async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schema_parser::SchemaInfo> {
     match app_state.data_source {
-        DataSource::LocalFile => match schema_parser::parse_schema_file(SCHEMA_FILE_PATH) {
+        DataSource::LocalFile => match schema_parser::SchemaInfo::from_file(SCHEMA_FILE_PATH) {
             Ok(schema_info) => Json(schema_info),
             Err(e) => {
                 eprintln!("Error parsing schema: {e}");
-                Json(create_empty_schema())
+                Json(schema_parser::SchemaInfo::new())
             }
         },
         DataSource::LocalIntrospect => {
@@ -28,7 +28,7 @@ pub async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schem
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
                     eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
-                    Json(create_empty_schema())
+                    Json(schema_parser::SchemaInfo::new())
                 }
             }
         }
@@ -37,7 +37,7 @@ pub async fn get_schema_handler(State(app_state): State<AppState>) -> Json<schem
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
                     eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
-                    Json(create_empty_schema())
+                    Json(schema_parser::SchemaInfo::new())
                 }
             }
         }
