@@ -6,11 +6,7 @@ use crate::{schema_parser, MAX_LIMIT};
 
 /// Create an empty schema structure
 pub fn create_empty_schema() -> schema_parser::SchemaInfo {
-    schema_parser::SchemaInfo {
-        nodes: vec![],
-        edges: vec![],
-        vectors: vec![],
-    }
+    schema_parser::SchemaInfo::new()
 }
 
 /// Create default error data structure

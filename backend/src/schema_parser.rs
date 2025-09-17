@@ -43,6 +43,34 @@ pub struct SchemaInfo {
     pub vectors: Vec<VectorType>,
 }
 
+impl SchemaInfo {
+    /// Create an empty schema
+    pub fn new() -> Self {
+        Self {
+            nodes: vec![],
+            edges: vec![],
+            vectors: vec![],
+        }
+    }
+
+    /// Parse schema from file
+    pub fn from_file(file_path: &str) -> anyhow::Result<Self> {
+        let content = fs::read_to_string(file_path)?;
+        Self::from_content(&content)
+    }
+
+    /// Parse schema from content string
+    pub fn from_content(content: &str) -> anyhow::Result<Self> {
+        parse_schema_content(content)
+    }
+}
+
+impl Default for SchemaInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn parse_schema_file(file_path: &str) -> anyhow::Result<SchemaInfo> {
     let content = fs::read_to_string(file_path)?;
     parse_schema_content(&content)
