@@ -64,24 +64,31 @@ pub fn parse_schema_content(content: &str) -> anyhow::Result<SchemaInfo> {
             continue;
         }
 
-        if line.starts_with("N::") || line.starts_with("V::") {
-            if let Some(node) = parse_node_definition(&lines, &mut i)? {
-                nodes.push(node);
+        match line {
+            l if l.starts_with("N::") => {
+                if let Some(node) = parse_node_definition(&lines, &mut i)? {
+                    nodes.push(node);
+                }
             }
-        } else if line.starts_with("E::") {
-            if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
-                edges.push(edge);
+            l if l.starts_with("V::") => {
+                if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
+                    vectors.push(vector);
+                }
             }
-        } else if line.starts_with("V::") {
-            if let Some(vector) = parse_vector_definition(&lines, &mut i)? {
-                vectors.push(vector);
+            l if l.starts_with("E::") => {
+                if let Some(edge) = parse_edge_definition(&lines, &mut i)? {
+                    edges.push(edge);
+                }
             }
-        } else {
-            i += 1;
+            _ => i += 1,
         }
     }
 
-    Ok(SchemaInfo { nodes, edges, vectors })
+    Ok(SchemaInfo {
+        nodes,
+        edges,
+        vectors,
+    })
 }
 
 fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<NodeType>> {
@@ -125,7 +132,10 @@ fn parse_node_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Op
     }))
 }
 
-fn parse_vector_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Option<VectorType>> {
+fn parse_vector_definition(
+    lines: &[&str],
+    index: &mut usize,
+) -> anyhow::Result<Option<VectorType>> {
     let line = lines[*index].trim();
 
     let vector_type = if line.starts_with("V::") { "V" } else { "N" };
@@ -196,28 +206,31 @@ fn parse_edge_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Op
             continue;
         }
 
-        if edge_line.starts_with("From:") {
-            from_node = edge_line
-                .strip_prefix("From:")
-                .unwrap_or("")
-                .trim()
-                .trim_end_matches(",")
-                .to_string();
-        } else if edge_line.starts_with("To:") {
-            to_node = edge_line
-                .strip_prefix("To:")
-                .unwrap_or("")
-                .trim()
-                .trim_end_matches(",")
-                .to_string();
-        } else if edge_line.starts_with("Properties: {") {
-            in_properties_section = true;
-        } else if in_properties_section && edge_line == "}" {
-            in_properties_section = false;
-        } else if in_properties_section {
-            if let Some((prop_name, prop_type)) = parse_property_line(edge_line) {
-                properties.insert(prop_name, prop_type);
+        match edge_line {
+            l if l.starts_with("From:") => {
+                from_node = l
+                    .strip_prefix("From:")
+                    .unwrap_or("")
+                    .trim()
+                    .trim_end_matches(",")
+                    .to_string();
             }
+            l if l.starts_with("To:") => {
+                to_node = l
+                    .strip_prefix("To:")
+                    .unwrap_or("")
+                    .trim()
+                    .trim_end_matches(",")
+                    .to_string();
+            }
+            "Properties: {" => in_properties_section = true,
+            "}" if in_properties_section => in_properties_section = false,
+            l if in_properties_section => {
+                if let Some((prop_name, prop_type)) = parse_property_line(l) {
+                    properties.insert(prop_name, prop_type);
+                }
+            }
+            _ => {}
         }
 
         *index += 1;
@@ -234,18 +247,168 @@ fn parse_edge_definition(lines: &[&str], index: &mut usize) -> anyhow::Result<Op
 fn parse_property_line(line: &str) -> Option<(String, String)> {
     let clean_line = line.trim().trim_end_matches(",");
 
-    if let Some(colon_pos) = clean_line.find(':') {
+    clean_line.find(':').map(|colon_pos| {
         let prop_name = clean_line[..colon_pos].trim().to_string();
-        let prop_type = clean_line[colon_pos + 1..].trim().to_string();
+        let prop_type = clean_line[colon_pos + 1..].trim();
 
-        let normalized_type = if prop_type.starts_with('[') && prop_type.ends_with(']') {
-            format!("Array<{}>", &prop_type[1..prop_type.len() - 1])
-        } else {
-            prop_type
+        let normalized_type = match prop_type.starts_with('[') && prop_type.ends_with(']') {
+            true => format!("Array<{}>", &prop_type[1..prop_type.len() - 1]),
+            false => prop_type.to_string(),
         };
 
-        return Some((prop_name, normalized_type));
+        (prop_name, normalized_type)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_property_line_basic() {
+        let result = parse_property_line("name: String");
+        assert_eq!(result, Some(("name".to_string(), "String".to_string())));
     }
 
-    None
+    #[test]
+    fn test_parse_property_line_with_comma() {
+        let result = parse_property_line("age: I32,");
+        assert_eq!(result, Some(("age".to_string(), "I32".to_string())));
+    }
+
+    #[test]
+    fn test_parse_property_line_array_type() {
+        let result = parse_property_line("scores: [F64]");
+        assert_eq!(
+            result,
+            Some(("scores".to_string(), "Array<F64>".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_property_line_invalid() {
+        let result = parse_property_line("invalid line");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_property_line_empty() {
+        let result = parse_property_line("");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_default_node_type() {
+        assert_eq!(default_node_type(), "N");
+    }
+
+    #[test]
+    fn test_default_vector_type() {
+        assert_eq!(default_vector_type(), "V");
+    }
+
+    #[test]
+    fn test_parse_schema_content_empty() {
+        let content = "";
+        let result = parse_schema_content(content).unwrap();
+        assert!(result.nodes.is_empty());
+        assert!(result.edges.is_empty());
+        assert!(result.vectors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_schema_content_with_comments() {
+        let content = r#"
+            // This is a comment
+            // Another comment
+        "#;
+        let result = parse_schema_content(content).unwrap();
+        assert!(result.nodes.is_empty());
+        assert!(result.edges.is_empty());
+        assert!(result.vectors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_schema_content_node() {
+        let content = r#"
+            N::User {
+                name: String,
+                age: I32
+            }
+        "#;
+        let result = parse_schema_content(content).unwrap();
+        assert_eq!(result.nodes.len(), 1);
+
+        let node = &result.nodes[0];
+        assert_eq!(node.name, "User");
+        assert_eq!(node.node_type, "N");
+        assert_eq!(node.properties.get("name"), Some(&"String".to_string()));
+        assert_eq!(node.properties.get("age"), Some(&"I32".to_string()));
+    }
+
+    #[test]
+    fn test_parse_schema_content_vector() {
+        let content = r#"
+            V::Embedding {
+                vector: [F64],
+                dimension: I32
+            }
+        "#;
+        let result = parse_schema_content(content).unwrap();
+        assert_eq!(result.vectors.len(), 1);
+
+        let vector = &result.vectors[0];
+        assert_eq!(vector.name, "Embedding");
+        assert_eq!(vector.vector_type, "V");
+        assert_eq!(
+            vector.properties.get("vector"),
+            Some(&"Array<F64>".to_string())
+        );
+        assert_eq!(vector.properties.get("dimension"), Some(&"I32".to_string()));
+    }
+
+    #[test]
+    fn test_parse_schema_content_edge() {
+        let content = r#"
+            E::Follows {
+                From: User,
+                To: User,
+                Properties: {
+                    since: String,
+                    weight: F64
+                }
+            }
+        "#;
+        let result = parse_schema_content(content).unwrap();
+        assert_eq!(result.edges.len(), 1);
+
+        let edge = &result.edges[0];
+        assert_eq!(edge.name, "Follows");
+        assert_eq!(edge.from_node, "User");
+        assert_eq!(edge.to_node, "User");
+        assert_eq!(edge.properties.get("since"), Some(&"String".to_string()));
+        assert_eq!(edge.properties.get("weight"), Some(&"F64".to_string()));
+    }
+
+    #[test]
+    fn test_parse_schema_content_mixed() {
+        let content = r#"
+            N::User {
+                name: String
+            }
+            
+            E::Likes {
+                From: User,
+                To: Post
+            }
+            
+            V::TextEmbedding {
+                content: String
+            }
+        "#;
+        let result = parse_schema_content(content).unwrap();
+        assert_eq!(result.nodes.len(), 1);
+        assert_eq!(result.edges.len(), 1);
+        assert_eq!(result.vectors.len(), 1);
+    }
 }
