@@ -36,7 +36,7 @@ const JsonValue = ({ value, rawValue }: { value: string; rawValue: string }) => 
 
 // Collapsible array component with pagination
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CollapsibleArray = ({ items }: { items: any[] }) => {
+const CollapsibleArray = ({ items, needsComma = false }: { items: any[]; needsComma?: boolean }) => {
     const [isExpanded, setIsExpanded] = useState(false)
     const [loadedCount, setLoadedCount] = useState(100)
     
@@ -49,51 +49,63 @@ const CollapsibleArray = ({ items }: { items: any[] }) => {
         setLoadedCount(prev => Math.min(prev + 100, items.length))
     }, [items.length])
     
+    // Handle empty arrays
+    if (items.length === 0) {
+        return <span>[]</span>
+    }
+    
     return (
-        <div className="inline-block">
-            <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="inline-flex items-center gap-1 hover:bg-accent rounded px-1 transition-colors"
-            >
-                {isExpanded ? (
-                    <ChevronDown className="h-3 w-3" />
-                ) : (
+        <span>
+            {!isExpanded ? (
+                <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="inline-flex items-center gap-1 hover:bg-accent rounded px-1 transition-colors"
+                >
                     <ChevronRight className="h-3 w-3" />
-                )}
-                <span className="text-muted-foreground">
-                    [{items.length} items]
-                </span>
-            </button>
-            
-            {isExpanded && (
-                <div className="ml-4 mt-1">
-                    {displayedItems.map((item, index) => (
-                        <div key={index} className="my-0.5">
-                            <span className="text-muted-foreground mr-2">{index}:</span>
-                            <JsonNode value={item} />
-                            {index < displayedItems.length - 1 && <span>,</span>}
+                    <span>[{items.length} {items.length === 1 ? 'item' : 'items'}]{needsComma ? "," : ""}</span>
+                </button>
+            ) : (
+                <>
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="inline-flex items-center hover:bg-accent rounded px-1 transition-colors"
+                    >
+                        <ChevronDown className="h-3 w-3" />
+                    </button>
+                    <span>[</span>
+                    {displayedItems.length > 0 && (
+                        <div className="ml-4 mt-1">
+                            {displayedItems.map((item, index) => (
+                                <div key={index} className="my-0.5">
+                                    <span className="text-muted-foreground mr-2">{index}:</span>
+                                    <JsonNode value={item} needsComma={index < displayedItems.length - 1 || loadedCount < items.length} />
+                                </div>
+                            ))}
+                            
+                            {loadedCount < items.length && (
+                                <div className="my-0.5">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={loadMore}
+                                        className="h-6 text-xs text-muted-foreground"
+                                    >
+                                        ... Load {Math.min(100, items.length - loadedCount)} more items
+                                    </Button>
+                                </div>
+                            )}
                         </div>
-                    ))}
-                    
-                    {loadedCount < items.length && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={loadMore}
-                            className="mt-2 h-6 text-xs"
-                        >
-                            Load {Math.min(100, items.length - loadedCount)} more...
-                        </Button>
                     )}
-                </div>
+                    <div>]{needsComma ? "," : ""}</div>
+                </>
             )}
-        </div>
+        </span>
     )
 }
 
 // Collapsible object component
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: string }) => {
+const CollapsibleObject = ({ obj, name, needsComma = false }: { obj: Record<string, any>; name?: string; needsComma?: boolean }) => {
     const [isExpanded, setIsExpanded] = useState(name === undefined) // Root object expanded by default
     
     const entries = Object.entries(obj)
@@ -101,81 +113,71 @@ const CollapsibleObject = ({ obj, name }: { obj: Record<string, any>; name?: str
     if (entries.length === 0) return <span>{'{}'}</span>
     
     return (
-        <div className="inline-block">
-            <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="inline-flex items-center gap-1 hover:bg-accent rounded px-1 transition-colors"
-            >
-                {isExpanded ? (
-                    <ChevronDown className="h-3 w-3" />
-                ) : (
+        <span>
+            {!isExpanded ? (
+                <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="inline-flex items-center gap-1 hover:bg-accent rounded px-1 transition-colors"
+                >
                     <ChevronRight className="h-3 w-3" />
-                )}
-                <span className="text-muted-foreground">
-                    {`{${entries.length} ${entries.length === 1 ? 'property' : 'properties'}}`}
-                </span>
-            </button>
-            
-            {isExpanded && (
-                <div className="ml-4 mt-1">
-                    {entries.map(([key, value], index) => (
-                        <div key={key} className="my-0.5">
-                            <span style={{ color: '#7E9CD8' }}>{`"${key}":`}</span>
-                            <span className="ml-2">
-                                <JsonNode value={value} />
-                                {index < entries.length - 1 && <span>,</span>}
-                            </span>
+                    <span>{`{${entries.length} ${entries.length === 1 ? 'property' : 'properties'}}`}{needsComma ? "," : ""}</span>
+                </button>
+            ) : (
+                <>
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="inline-flex items-center hover:bg-accent rounded px-1 transition-colors"
+                    >
+                        <ChevronDown className="h-3 w-3" />
+                    </button>
+                    <span>{'{'}</span>
+                    {entries.length > 0 && (
+                        <div className="ml-4 mt-1">
+                            {entries.map(([key, value], index) => (
+                                <div key={key} className="my-0.5">
+                                    <span style={{ color: '#7E9CD8' }}>{`"${key}":`}</span>
+                                    <span className="ml-2">
+                                        <JsonNode value={value} needsComma={index < entries.length - 1} />
+                                    </span>
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    )}
+                    <div>{'}'}{needsComma ? "," : ""}</div>
+                </>
             )}
-        </div>
+        </span>
     )
 }
 
 // Main node renderer
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const JsonNode = ({ value }: { value: any }) => {
+const JsonNode = ({ value, needsComma = false }: { value: any; needsComma?: boolean }) => {
     if (value === null) {
-        return <span className="text-gray-500">null</span>
+        return <span className="text-gray-500">null{needsComma ? "," : ""}</span>
     }
     
     if (value === undefined) {
-        return <span className="text-gray-500">undefined</span>
+        return <span className="text-gray-500">undefined{needsComma ? "," : ""}</span>
     }
     
     if (typeof value === 'string') {
-        return <JsonValue value={`"${value}"`} rawValue={value} />
+        return <span><JsonValue value={`"${value}"`} rawValue={value} />{needsComma ? "," : ""}</span>
     }
     
     if (typeof value === 'number' || typeof value === 'boolean') {
-        return <JsonValue value={String(value)} rawValue={String(value)} />
+        return <span><JsonValue value={String(value)} rawValue={String(value)} />{needsComma ? "," : ""}</span>
     }
     
     if (Array.isArray(value)) {
-        // For small arrays, render inline
-        if (value.length <= 3) {
-            return (
-                <span>
-                    [
-                    {value.map((item, index) => (
-                        <span key={index}>
-                            <JsonNode value={item} />
-                            {index < value.length - 1 && ', '}
-                        </span>
-                    ))}
-                    ]
-                </span>
-            )
-        }
-        return <CollapsibleArray items={value} />
+        return <CollapsibleArray items={value} needsComma={needsComma} />
     }
     
     if (typeof value === 'object') {
-        return <CollapsibleObject obj={value} />
+        return <CollapsibleObject obj={value} needsComma={needsComma} />
     }
     
-    return <span>{String(value)}</span>
+    return <span>{String(value)}{needsComma ? "," : ""}</span>
 }
 
 export function OptimizedJsonViewer({ data}: OptimizedJsonViewerProps) {
