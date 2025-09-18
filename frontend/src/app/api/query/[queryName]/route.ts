@@ -140,30 +140,34 @@ function sortJsonObject(value: any): any {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { queryName: string } }
+  { params }: { params: Promise<{ queryName: string }> }
 ) {
-  return await handleQueryExecution(request, params.queryName);
+  const { queryName } = await params;
+  return await handleQueryExecution(request, queryName);
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { queryName: string } }
+  { params }: { params: Promise<{ queryName: string }> }
 ) {
-  return await handleQueryExecution(request, params.queryName);
+  const { queryName } = await params;
+  return await handleQueryExecution(request, queryName);
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { queryName: string } }
+  { params }: { params: Promise<{ queryName: string }> }
 ) {
-  return await handleQueryExecution(request, params.queryName);
+  const { queryName } = await params;
+  return await handleQueryExecution(request, queryName);
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { queryName: string } }
+  { params }: { params: Promise<{ queryName: string }> }
 ) {
-  return await handleQueryExecution(request, params.queryName);
+  const { queryName } = await params;
+  return await handleQueryExecution(request, queryName);
 }
 
 async function handleQueryExecution(request: NextRequest, queryName: string) {
