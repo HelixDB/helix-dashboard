@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const DEFAULT_PORT = 6969;
 const MAX_LIMIT = 300;
 
-const host = process.env.DOCKER_HOST_INTERNAL || 'localhost';
+const host = process.env.DOCKER_HOST_INTERNAL || process.env.HELIX_HOST || 'localhost';
 const port = process.env.HELIX_PORT || DEFAULT_PORT;
 const cloudUrl = process.env.HELIX_CLOUD_URL;
 

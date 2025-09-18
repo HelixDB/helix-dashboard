@@ -207,12 +207,6 @@ export default function QueriesPage() {
     const [bulkNewTag, setBulkNewTag] = useState("")
     const [showBulkActions, setShowBulkActions] = useState(false)
 
-    const host = process.env.DOCKER_HOST_INTERNAL || 'localhost';
-    const port = process.env.HELIX_PORT || 6969;
-    const cloudUrl = process.env.HELIX_CLOUD_URL;
-    
-    const helixUrl = cloudUrl ? cloudUrl : `http://${host}:${port}`;
-
     // Load endpoints from backend
     const loadEndpoints = async () => {
         setEndpointsLoading(true)
@@ -1288,7 +1282,7 @@ export default function QueriesPage() {
                                             <p className="text-lg font-medium">No endpoints available</p>
                                             <p className="text-sm mb-4">Unable to connect to HelixDB</p>
                                             <div className="space-y-2 text-xs">
-                                                <p>Make sure HelixDB is running on <code className="bg-muted px-1 rounded">{helixUrl}</code></p>
+                                                <p>Make sure HelixDB is running</p>
                                                 <p>Check your HelixDB connection and try clicking the {"Refresh Endpoints"} button above</p>
                                             </div>
                                         </div>
@@ -1429,7 +1423,7 @@ export default function QueriesPage() {
                                         <SelectItem value="DELETE">DELETE</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Input value={buildUrl()} readOnly className="flex-1" />
+                                <Input value={buildUrl()} readOnly className="flex-1 pointer-events-none" />
                                 <Button onClick={sendRequest} disabled={activeTab?.loading || loading}>
                                     {(activeTab?.loading || loading) ? "Sending..." : <Send className="h-4 w-4" />}
                                 </Button>

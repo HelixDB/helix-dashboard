@@ -12,7 +12,7 @@ interface ApiEndpointInfo {
   parameters: QueryParameter[];
 }
 
-const host = process.env.DOCKER_HOST_INTERNAL || 'localhost';
+const host = process.env.DOCKER_HOST_INTERNAL || process.env.HELIX_HOST || 'localhost';
 const port = process.env.HELIX_PORT || 6969;
 const cloudUrl = process.env.HELIX_CLOUD_URL;
 

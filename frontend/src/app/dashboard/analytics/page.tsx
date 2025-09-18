@@ -25,12 +25,6 @@ import { Search, Filter, TrendingUp, Clock, AlertTriangle, BarChart3, Activity, 
 import * as d3 from "d3"
 import { getEndpoints, clearEndpointsCache } from "@/utils/endpoints"
 
-const host = process.env.DOCKER_HOST_INTERNAL || 'localhost';
-const port = process.env.HELIX_PORT || 6969;
-const cloudUrl = process.env.HELIX_CLOUD_URL;
-
-const helixUrl = cloudUrl ? cloudUrl : `http://${host}:${port}`;
-
 // Generate synthetic analytics data for a full 36-hour period
 const generateFullTimeSeriesData = (baseValue: number, variance: number) => {
     const data = []
@@ -847,7 +841,7 @@ export default function AnalyticsPage() {
                                                 <p className="text-lg font-medium">No endpoints available</p>
                                                 <p className="text-sm mb-4">Unable to connect to HelixDB</p>
                                                 <div className="space-y-2 text-xs">
-                                                    <p>Make sure HelixDB is running on <code className="bg-muted px-1 rounded">{helixUrl}</code></p>
+                                                    <p>Make sure HelixDB is running</p>
                                                     <p>Check your HelixDB connection and try clicking the {"Refresh Endpoints"} button above</p>
                                                 </div>
                                             </div>
