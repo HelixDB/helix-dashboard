@@ -24,7 +24,7 @@ export interface SchemaInfo {
 }
 
 class SchemaService {
-    private baseUrl = 'http://localhost:8080/api';
+    private baseUrl = '/api';
 
     async getSchema(): Promise<SchemaInfo> {
         try {

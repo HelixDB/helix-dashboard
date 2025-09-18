@@ -1,6 +1,6 @@
 # Docker Setup for Helix Dashboard
 
-This guide explains how to build and run the Helix Dashboard using Docker, which packages both the frontend and backend in a single container.
+This guide explains how to build and run the Helix Dashboard using Docker, which packages the Next.js application in a single container.
 
 ## Prerequisites
 
@@ -29,10 +29,10 @@ docker-compose down
 docker build -t helix-dashboard .
 
 # Run the container
-docker run -p 3000:3000 -p 8080:8080 --add-host=host.docker.internal:host-gateway --name helix-dashboard helix-dashboard
+docker run -p 3000:3000 --add-host=host.docker.internal:host-gateway --name helix-dashboard helix-dashboard
 
 # Run in detached mode
-docker run -d -p 3000:3000 -p 8080:8080 --add-host=host.docker.internal:host-gateway --name helix-dashboard helix-dashboard
+docker run -d -p 3000:3000 --add-host=host.docker.internal:host-gateway --name helix-dashboard helix-dashboard
 
 # Stop the container
 docker stop helix-dashboard
@@ -43,42 +43,73 @@ docker rm helix-dashboard
 
 Once the container is running:
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8080
+- **Application**: http://localhost:3000
 
 ## Configuration
 
-### HelixDB Configuration Files
-
-If you have local HelixDB configuration files, place them in a `helixdb-cfg` directory in the project root:
-
-```
-helix-dashboard/
-├── helixdb-cfg/
-│   ├── schema.hx
-│   └── queries.hx
-├── Dockerfile
-└── docker-compose.yml
-```
-
-The Docker container will automatically mount this directory and make the configuration files available to the backend.
+The application connects to your HelixDB instance using environment variables from two sources:
 
 ### Environment Variables
 
-You can customize the application by setting environment variables:
+**Docker environment (in docker-compose.yml):**
+- `NODE_ENV=production` - Production mode for Next.js
+- `PORT=3000` - Application port
+- `DOCKER_HOST_INTERNAL=host.docker.internal` - For Docker networking
+
+**HelixDB configuration (from frontend/.env file):**
+- `HELIX_HOST` - HelixDB host (e.g., localhost)
+- `HELIX_PORT` - HelixDB port (default: 6969)
+- `HELIX_CLOUD_URL` - HelixDB cloud URL (for cloud deployments)
+- `HELIX_API_KEY` - HelixDB API key (for cloud deployments)
+
+### Setting up your .env file
+
+Create a `.env` file in the `frontend` directory with your HelixDB configuration:
 
 ```bash
-# Using docker-compose
-# Edit the docker-compose.yml file to add environment variables
+# frontend/.env
 
-# Using docker run
-docker run -p 3000:3000 -p 8080:8080 \
+# For local HelixDB instance
+HELIX_HOST=localhost
+HELIX_PORT=6969
+HELIX_CLOUD_URL=
+HELIX_API_KEY=
+
+# OR for cloud HelixDB instance
+HELIX_HOST=
+HELIX_PORT=
+HELIX_CLOUD_URL=https://your-cloud-url.com
+HELIX_API_KEY=your-api-key
+```
+
+### Changing HelixDB connection
+
+To switch between different HelixDB instances:
+
+1. **Edit your `frontend/.env` file** with new values
+2. **Restart the container** (no rebuild needed):
+   ```bash
+   docker-compose restart
+   ```
+
+### Using Docker run directly
+
+If using `docker run` instead of docker-compose, you'll need to pass the environment variables manually:
+
+```bash
+docker run -p 3000:3000 \
   -e NODE_ENV=production \
   -e PORT=3000 \
-  -e BACKEND_PORT=8080 \
   -e DOCKER_HOST_INTERNAL=host.docker.internal \
+  -e HELIX_HOST=localhost \
+  -e HELIX_PORT=6969 \
+  -e HELIX_CLOUD_URL=https://xxxxxxxxxx.execute-api.us-west-1.amazonaws.com/v1 \
+  -e HELIX_API_KEY=your-api-key \
+  --add-host=host.docker.internal:host-gateway \
   --name helix-dashboard helix-dashboard
 ```
+
+**Note:** Using docker-compose is recommended as it automatically reads from `frontend/.env`.
 
 ## Development
 
@@ -88,9 +119,9 @@ For development, you may want to mount your source code as volumes:
 # Add to docker-compose.yml under the service
 volumes:
   - ./frontend/src:/app/src:ro
-  - ./backend/src:/app/backend/src:ro
-  - ./helixdb-cfg:/app/helixdb-cfg:ro
 ```
+
+Note: For active development, it's recommended to run the application locally using `npm run dev` instead of Docker.
 
 ## Troubleshooting
 
@@ -116,16 +147,15 @@ docker exec -it helix-dashboard sh
 
 ### Common Issues
 
-1. **Port conflicts**: Make sure ports 3000 and 8080 are not being used by other applications
+1. **Port conflicts**: Make sure port 3000 is not being used by other applications
 2. **Build failures**: Ensure you have enough disk space and memory for the build process
-3. **Configuration files**: Make sure your `helixdb-cfg` directory exists and contains the necessary files
+3. **HelixDB connection**: Make sure your HelixDB instance is running and accessible on the configured port (default: 6969)
 
 ## Architecture
 
 The Docker setup uses a multi-stage build:
 
-1. **Frontend Stage**: Builds the Next.js application
-2. **Backend Stage**: Compiles the Rust backend
-3. **Runtime Stage**: Combines both applications in a lightweight Node.js Alpine image
+1. **Builder Stage**: Builds the Next.js application with all dependencies
+2. **Runtime Stage**: Creates a lightweight production image with only the built application
 
-Both services run concurrently in the same container using a bash script that manages both processes.
+The container runs a single Next.js application that includes both the frontend interface and API routes for connecting to HelixDB.

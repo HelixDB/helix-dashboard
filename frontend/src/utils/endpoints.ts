@@ -62,7 +62,7 @@ function convertToFrontendFormat(apiEndpoint: ApiEndpointInfo): EndpointConfig {
             });
     }
 
-    const url = `http://localhost:8080/api/query/${apiEndpoint.query_name}`;
+    const url = `/api/query/${apiEndpoint.query_name}`;
 
     return {
         name,
@@ -183,7 +183,7 @@ function generateEndpointKey(queryName: string): string {
 
 export async function fetchEndpoints(): Promise<Record<string, EndpointConfig>> {
     try {
-        const response = await fetch('http://localhost:8080/api/endpoints');
+        const response = await fetch('/api/endpoints');
         if (!response.ok) {
             throw new Error(`Failed to fetch endpoints: ${response.status}`);
         }
