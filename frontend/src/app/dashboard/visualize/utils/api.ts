@@ -6,7 +6,7 @@ import {
     NodeDetailsResponse 
 } from '../types';
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 export const fetchSchema = async (): Promise<SchemaInfo> => {
     const response = await fetch(`${API_BASE}/api/schema`);
@@ -22,7 +22,7 @@ export const fetchNodesByLabel = async (
     params.append('label', label);
     if (limit) params.append('limit', limit.toString());
     
-    const response = await fetch(`${API_BASE}/nodes-by-label?${params}`);
+    const response = await fetch(`${API_BASE}/api/nodes-by-label?${params}`);
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -31,7 +31,7 @@ export const fetchNodesByLabel = async (
 
 export const fetchNodesAndEdges = async (limit?: number): Promise<NodesEdgesResponse> => {
     const params = limit ? `?limit=${limit}` : '';
-    const response = await fetch(`${API_BASE}/nodes-edges${params}`);
+    const response = await fetch(`${API_BASE}/api/nodes-edges${params}`);
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -40,7 +40,7 @@ export const fetchNodesAndEdges = async (limit?: number): Promise<NodesEdgesResp
 
 export const fetchNodeConnections = async (nodeId: string): Promise<ConnectionData> => {
     const response = await fetch(
-        `${API_BASE}/node-connections?node_id=${encodeURIComponent(nodeId)}`
+        `${API_BASE}/api/node-connections?node_id=${encodeURIComponent(nodeId)}`
     );
     if (!response.ok) {
         throw new Error(`Failed to fetch connections: ${response.status}`);
@@ -51,7 +51,7 @@ export const fetchNodeConnections = async (nodeId: string): Promise<ConnectionDa
 
 export const fetchNodeDetails = async (nodeId: string): Promise<NodeDetailsResponse> => {
     const response = await fetch(
-        `${API_BASE}/node-details?id=${encodeURIComponent(nodeId)}`
+        `${API_BASE}/api/node-details?id=${encodeURIComponent(nodeId)}`
     );
     if (!response.ok) {
         throw new Error(`Failed to fetch node details: ${response.status}`);
