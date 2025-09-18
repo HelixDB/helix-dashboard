@@ -5,8 +5,9 @@
 
 use clap::{Parser, ValueEnum};
 use dotenv::dotenv;
-use helix_rs::{HelixDB, HelixDBClient};
-use std::{sync::Arc, env};
+use helix_rs::HelixDBClient;
+use std::env;
+use core::helix_client::BackendHelixClient;
 
 pub mod core;
 pub mod web;
@@ -88,12 +89,10 @@ pub struct Args {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub helix_db: Arc<HelixDB>,
+    pub helix_client: BackendHelixClient,
     pub data_source: DataSource,
-    pub helix_url: String,
     pub api_key: Option<String>,
     pub backend_port: u16,  // Backend web server port  
-    pub helix_port: u16,    // HelixDB port
 }
 
 impl AppState {
@@ -133,7 +132,11 @@ impl AppState {
             }
         };
 
-        let helix_db = Self::initialize_helix_db(&data_source, &cloud_url, &host, &api_key, helix_port);
+        let helix_client = BackendHelixClient::new(
+            Some(&helix_url),
+            None,
+            api_key.as_deref(),
+        );
 
         let backend_port = env::var(ENV_BACKEND_PORT)
             .ok()
@@ -141,42 +144,13 @@ impl AppState {
             .unwrap_or(DEFAULT_BACKEND_PORT);
 
         Self {
-            helix_db,
+            helix_client,
             data_source,
-            helix_url,
             api_key,
             backend_port,
-            helix_port,
         }
     }
 
-    /// Initialize the HelixDB instance based on configuration
-    fn initialize_helix_db(
-        data_source: &DataSource, 
-        cloud_url: &Option<String>, 
-        host: &str, 
-        api_key: &Option<String>, 
-        helix_port: u16
-    ) -> Arc<HelixDB> {
-        match data_source {
-            DataSource::Cloud => {
-                let cloud_api_url = cloud_url
-                    .as_ref()
-                    .expect("Cloud URL is required for cloud mode");
-
-                Arc::new(HelixDB::new(
-                    Some(cloud_api_url.as_str()),
-                    None,
-                    api_key.as_deref(),
-                ))
-            }
-            DataSource::LocalIntrospect | DataSource::LocalFile => Arc::new(HelixDB::new(
-                Some(&format!("http://{host}")),
-                Some(helix_port),
-                None,
-            )),
-        }
-    }
 }
 
 

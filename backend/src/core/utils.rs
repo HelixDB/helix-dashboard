@@ -1,7 +1,6 @@
 //! Utility functions used throughout the application
 
 use crate::MAX_LIMIT;
-use reqwest::Client as HttpClient;
 use serde_json::{Number, Value, json};
 
 #[cfg(test)]
@@ -55,27 +54,6 @@ pub fn create_node_connections_error_data() -> serde_json::Value {
     ErrorResponse::node_connections_data()
 }
 
-/// Make HTTP request with optional authentication
-pub async fn make_http_request_with_auth(
-    client: &HttpClient,
-    url: &str,
-    api_key: Option<&str>,
-) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    let mut request = client.get(url);
-
-    if let Some(key) = api_key {
-        request = request.header("x-api-key", key);
-    }
-
-    let response = request.send().await?;
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP error: {}", response.status()).into());
-    }
-
-    let value: serde_json::Value = response.json().await?;
-    Ok(value)
-}
 
 /// Type conversion utilities
 pub struct TypeConverter;

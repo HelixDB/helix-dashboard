@@ -5,42 +5,43 @@ use axum::{
     response::Json,
 };
 use helix_rs::HelixDBClient;
-use serde_json::json;
+use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
 use crate::{
     AppState, DataSource, QUERIES_FILE_PATH, SCHEMA_FILE_PATH,
-    core::{query_parser, schema_parser, utils::*},
+    core::{query_parser::{ApiEndpointInfo, QueryParameter}, schema_parser::SchemaInfo, utils::{create_default_error_data, create_node_connections_error_data, convert_string_to_type, sort_json_object, validate_limit}},
     web::types::*,
 };
+
 
 #[axum_macros::debug_handler]
 pub async fn get_schema_handler(
     State(app_state): State<AppState>,
-) -> Json<schema_parser::SchemaInfo> {
+) -> Json<SchemaInfo> {
     match app_state.data_source {
-        DataSource::LocalFile => match schema_parser::SchemaInfo::from_file(SCHEMA_FILE_PATH) {
+        DataSource::LocalFile => match SchemaInfo::from_file(SCHEMA_FILE_PATH) {
             Ok(schema_info) => Json(schema_info),
             Err(e) => {
                 eprintln!("Error parsing schema: {e}");
-                Json(schema_parser::SchemaInfo::new())
+                Json(SchemaInfo::new())
             }
         },
         DataSource::LocalIntrospect => {
-            match fetch_cloud_introspect(&app_state.helix_url, None).await {
+            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
-                    eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
-                    Json(schema_parser::SchemaInfo::new())
+                    eprintln!("Error fetching schema from {}: {}", app_state.helix_client.base_url(), e);
+                    Json(SchemaInfo::new())
                 }
             }
         }
         DataSource::Cloud => {
-            match fetch_cloud_introspect(&app_state.helix_url, app_state.api_key.as_deref()).await {
+            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
-                    eprintln!("Error fetching schema from {}: {}", app_state.helix_url, e);
-                    Json(schema_parser::SchemaInfo::new())
+                    eprintln!("Error fetching schema from {}: {}", app_state.helix_client.base_url(), e);
+                    Json(SchemaInfo::new())
                 }
             }
         }
@@ -51,35 +52,34 @@ pub async fn get_schema_handler(
 pub async fn execute_query_handler(
     State(app_state): State<AppState>,
     Path(query_name): Path<String>,
-    axum::extract::Query(query_params): axum::extract::Query<HashMap<String, String>>,
-    body: Option<Json<serde_json::Value>>,
-) -> Json<serde_json::Value> {
+    Query(query_params): Query<HashMap<String, String>>,
+    body: Option<Json<Value>>,
+) -> Json<Value> {
     let mut params = match body {
-        Some(Json(serde_json::Value::Object(map))) => map,
+        Some(Json(Value::Object(map))) => map,
         Some(Json(other)) if !other.is_null() => {
-            let mut map = serde_json::Map::new();
+            let mut map = Map::new();
             map.insert("body".to_string(), other);
             map
         }
-        _ => serde_json::Map::new(),
+        _ => Map::new(),
     };
 
-    let param_types =
-        get_query_param_types(&app_state, &query_name, app_state.api_key.as_deref()).await;
+    let param_types = get_query_param_types(&app_state, &query_name).await;
     for (key, value) in query_params {
         if !params.contains_key(&key) {
             let converted_value = if let Some(param_type) = param_types.get(&key) {
                 convert_string_to_type(&value, param_type)
             } else {
-                serde_json::Value::String(value)
+                Value::String(value)
             };
             params.insert(key, converted_value);
         }
     }
 
-    let params_value = serde_json::Value::Object(params);
+    let params_value = Value::Object(params);
 
-    match app_state.helix_db.query(&query_name, &params_value).await {
+    match app_state.helix_client.query(&query_name, &params_value).await {
         Ok(result) => Json(sort_json_object(result)),
         Err(e) => {
             eprintln!("Error executing query '{query_name}': {e}");
@@ -94,10 +94,10 @@ pub async fn execute_query_handler(
 #[axum_macros::debug_handler]
 pub async fn get_endpoints_handler(
     State(app_state): State<AppState>,
-) -> Json<Vec<query_parser::ApiEndpointInfo>> {
+) -> Json<Vec<ApiEndpointInfo>> {
     match app_state.data_source {
         DataSource::LocalFile => {
-            match query_parser::ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
+            match ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
                 Ok(endpoints) => Json(endpoints),
                 Err(e) => {
                     eprintln!("Error getting endpoints: {e}");
@@ -106,7 +106,7 @@ pub async fn get_endpoints_handler(
             }
         }
         DataSource::LocalIntrospect | DataSource::Cloud => {
-            match fetch_cloud_introspect(&app_state.helix_url, app_state.api_key.as_deref()).await {
+            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
                 Ok(introspect_data) => {
                     let endpoints = introspect_data
                         .queries
@@ -118,7 +118,7 @@ pub async fn get_endpoints_handler(
                 Err(e) => {
                     eprintln!(
                         "Error fetching endpoints from {}: {}",
-                        app_state.helix_url, e
+                        app_state.helix_client.base_url(), e
                     );
                     Json(vec![])
                 }
@@ -131,8 +131,8 @@ pub async fn get_endpoints_handler(
 pub async fn get_nodes_edges_handler(
     State(app_state): State<AppState>,
     Query(params): Query<NodesEdgesQuery>,
-) -> Json<serde_json::Value> {
-    let mut url = format!("{}/nodes-edges", app_state.helix_url);
+) -> Json<Value> {
+    let mut endpoint = "nodes-edges".to_string();
     let mut query_params = vec![];
 
     if let Some(limit) = validate_limit(params.limit) {
@@ -144,18 +144,11 @@ pub async fn get_nodes_edges_handler(
     }
 
     if !query_params.is_empty() {
-        url.push('?');
-        url.push_str(&query_params.join("&"));
+        endpoint.push('?');
+        endpoint.push_str(&query_params.join("&"));
     }
 
-    let client = reqwest::Client::new();
-    let api_key = if matches!(app_state.data_source, DataSource::Cloud) {
-        app_state.api_key.as_deref()
-    } else {
-        None
-    };
-
-    match make_http_request_with_auth(&client, &url, api_key).await {
+    match app_state.helix_client.get::<Value>(&endpoint).await {
         Ok(data) => Json(data),
         Err(e) => {
             eprintln!("Error with nodes-edges request: {e}");
@@ -171,16 +164,9 @@ pub async fn get_nodes_edges_handler(
 pub async fn get_node_details_handler(
     State(app_state): State<AppState>,
     Query(params): Query<NodeDetailsQuery>,
-) -> Json<serde_json::Value> {
-    let url = format!("{}/node-details?id={}", app_state.helix_url, params.id);
-    let client = reqwest::Client::new();
-    let api_key = if matches!(app_state.data_source, DataSource::Cloud) {
-        app_state.api_key.as_deref()
-    } else {
-        None
-    };
-
-    match make_http_request_with_auth(&client, &url, api_key).await {
+) -> Json<Value> {
+    let endpoint = format!("node-details?id={}", params.id);
+    match app_state.helix_client.get::<Value>(&endpoint).await {
         Ok(data) => Json(data),
         Err(e) => {
             eprintln!("Error with node-details request: {e}");
@@ -196,8 +182,8 @@ pub async fn get_node_details_handler(
 pub async fn get_nodes_by_label_handler(
     State(app_state): State<AppState>,
     Query(params): Query<NodesByLabelQuery>,
-) -> Json<serde_json::Value> {
-    let mut url = format!("{}/nodes-by-label", app_state.helix_url);
+) -> Json<Value> {
+    let mut endpoint = "nodes-by-label".to_string();
     let mut query_params = vec![];
 
     query_params.push(format!("label={}", params.label));
@@ -207,18 +193,11 @@ pub async fn get_nodes_by_label_handler(
     }
 
     if !query_params.is_empty() {
-        url.push('?');
-        url.push_str(&query_params.join("&"));
+        endpoint.push('?');
+        endpoint.push_str(&query_params.join("&"));
     }
 
-    let client = reqwest::Client::new();
-    let api_key = if matches!(app_state.data_source, DataSource::Cloud) {
-        app_state.api_key.as_deref()
-    } else {
-        None
-    };
-
-    match make_http_request_with_auth(&client, &url, api_key).await {
+    match app_state.helix_client.get::<Value>(&endpoint).await {
         Ok(data) => Json(data),
         Err(e) => {
             eprintln!("Error with nodes-by-label request: {e}");
@@ -234,20 +213,10 @@ pub async fn get_nodes_by_label_handler(
 pub async fn get_node_connections_handler(
     State(app_state): State<AppState>,
     Query(params): Query<NodeConnectionsQuery>,
-) -> Json<serde_json::Value> {
-    let url = format!(
-        "{}/node-connections?node_id={}",
-        app_state.helix_url, params.node_id
-    );
+) -> Json<Value> {
+    let endpoint = format!("node-connections?node_id={}", params.node_id);
 
-    let client = reqwest::Client::new();
-    let api_key = if matches!(app_state.data_source, DataSource::Cloud) {
-        app_state.api_key.as_deref()
-    } else {
-        None
-    };
-
-    match make_http_request_with_auth(&client, &url, api_key).await {
+    match app_state.helix_client.get::<Value>(&endpoint).await {
         Ok(data) => Json(data),
         Err(e) => {
             eprintln!("Error with node-connections request: {e}");
@@ -255,8 +224,8 @@ pub async fn get_node_connections_handler(
                 "error": format!("Request failed: {e}")
             });
 
-            if let serde_json::Value::Object(ref mut map) = error_response {
-                if let serde_json::Value::Object(error_data) = create_node_connections_error_data()
+            if let Value::Object(ref mut map) = error_response {
+                if let Value::Object(error_data) = create_node_connections_error_data()
                 {
                     for (key, value) in error_data {
                         map.insert(key, value);
@@ -272,15 +241,14 @@ pub async fn get_node_connections_handler(
 async fn get_query_param_types(
     app_state: &AppState,
     query_name: &str,
-    api_key: Option<&str>,
 ) -> HashMap<String, String> {
     let mut param_types = HashMap::new();
 
-    match fetch_cloud_introspect(&app_state.helix_url, api_key).await {
+    match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
         Ok(introspect_data) => {
             for query in introspect_data.queries {
                 if query.name == query_name {
-                    if let serde_json::Value::Object(params) = query.parameters {
+                    if let Value::Object(params) = query.parameters {
                         for (param_name, param_type_val) in params {
                             if let Some(param_type_str) = param_type_val.as_str() {
                                 param_types.insert(param_name, param_type_str.to_string());
@@ -299,34 +267,13 @@ async fn get_query_param_types(
     param_types
 }
 
-pub async fn fetch_cloud_introspect(
-    helix_url: &str,
-    api_key: Option<&str>,
-) -> anyhow::Result<CloudIntrospectData> {
-    let client = reqwest::Client::new();
-    let url = format!("{helix_url}/introspect");
-    let mut request = client.get(&url);
 
-    if let Some(api_key) = api_key {
-        request = request.header("x-api-key", api_key);
-    }
-
-    let response = request.send().await?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("Failed to fetch introspect data: {}", response.status());
-    }
-
-    let data: CloudIntrospectData = response.json().await?;
-    Ok(data)
-}
-
-pub fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpointInfo {
-    let parameters = if let serde_json::Value::Object(params) = query.parameters {
+pub fn map_query_to_endpoint(query: IntrospectQuery) -> ApiEndpointInfo {
+    let parameters = if let Value::Object(params) = query.parameters {
         params
             .into_iter()
             .map(|(name, type_val)| {
-                query_parser::QueryParameter::new(
+                QueryParameter::new(
                     name,
                     type_val.as_str().unwrap_or("String").to_string(),
                 )
@@ -338,7 +285,7 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> query_parser::ApiEndpoin
 
     let method = determine_http_method(&query.name);
 
-    query_parser::ApiEndpointInfo::new(
+    ApiEndpointInfo::new(
         format!("/api/query/{}", query.name),
         method.to_string(),
         query.name,
