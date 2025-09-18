@@ -1,8 +1,7 @@
-# Multi-stage Dockerfile for Helix Dashboard
-# Stage 1: Build the frontend
-FROM node:18-alpine AS frontend-builder
+# Dockerfile for Helix Dashboard (Next.js only)
+FROM node:18-alpine AS builder
 
-WORKDIR /app/frontend
+WORKDIR /app
 
 # Copy package files
 COPY frontend/package*.json ./
@@ -13,67 +12,34 @@ RUN npm ci --no-audit --no-fund
 # Copy frontend source
 COPY frontend/ ./
 
-# Build the frontend
+# Build the application
 RUN npm run build
 
-# Stage 2: Build the backend
-FROM rustlang/rust:nightly-alpine AS backend-builder
-
-# Install build dependencies
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
-ENV CARGO_BUILD_JOBS=4
-
-WORKDIR /app/backend
-
-# Copy Cargo files for better caching
-COPY backend/Cargo.toml backend/Cargo.lock ./
-
-# Create dummy src to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Build dependencies
-RUN cargo build
-RUN rm src/main.rs
-
-# Copy actual source code
-COPY backend/src ./src
-
-# Build the actual application
-RUN touch src/main.rs && cargo build
-
-# Stage 3: Runtime image
+# Production image
 FROM node:18-alpine AS runtime
-
-# Install bash for the entrypoint script
-RUN apk add --no-cache bash
 
 WORKDIR /app
 
-# Copy the built frontend from frontend-builder stage
-COPY --from=frontend-builder /app/frontend/.next ./.next
-COPY --from=frontend-builder /app/frontend/package*.json ./
-COPY --from=frontend-builder /app/frontend/node_modules ./node_modules
+# Copy built application
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy public directory if it exists
-RUN mkdir -p ./public
-
-# Copy the built backend from backend-builder stage (debug build)
-COPY --from=backend-builder /app/backend/target/debug/backend ./backend
-
-# Copy the entrypoint script
-COPY start.sh ./start.sh
-RUN chmod +x ./start.sh
+# Copy public directory from project root and other necessary files
+COPY public ./public
+COPY --from=builder /app/next.config.* ./
+COPY --from=builder /app/src ./src
 
 # Create helixdb-cfg directory for configuration files
 RUN mkdir -p helixdb-cfg
 
-# Expose ports
-EXPOSE 3000 8080
+# Expose only the Next.js port
+EXPOSE 3000
 
 # Set environment variables
+ENV NODE_ENV=production
 ENV PORT=3000
-ENV BACKEND_PORT=8080
-ENV DOCKER_HOST_INTERNAL=host.docker.internal
+ENV HOSTNAME=0.0.0.0
 
-# Start both services
-CMD ["./start.sh"]
+# Start the Next.js application
+CMD ["npm", "start"]

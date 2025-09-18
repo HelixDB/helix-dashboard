@@ -18,27 +18,56 @@ The dashboard works best when your queries follow this naming convention:
 
 ## Setup
 
-Backend:
-1. Navigate to the `backend` directory and ensure your HelixDB is running either locally or on a cloud server
-2. You then have 3 options:
-    - **Local introspect** (default): Run `cargo run` or `cargo run -- local-introspect`
-    - **Local file**: Read queries and schema from your local file, add your helixdb-cfg to the backend folder and run `cargo run -- local-file`
-    - **Cloud mode**: Run `cargo run -- cloud http://your-helix-db-url:6969`
+### Local Development
 
-- For local introspect, you can specify a custom port for your HelixDB instance: `cargo run -- --port 8888` or `cargo run -- -p 8888`
-- For local file: `cargo run -- local-file --port 8888`
+1. Ensure your HelixDB instance is running (default port: 6969)
+2. Navigate to the `frontend` directory and run `npm install` to install dependencies
+3. Run `npm run dev` to start the development server
+4. The application will be available at `http://localhost:3000`
 
-Frontend:
-1. cd into the `frontend` directory and run `npm install` to install the dependencies
-2. Run `npm run dev` to start the frontend
-3. The frontend will be available at `http://localhost:3000`
+### Docker (Production)
+
+For production deployment using Docker:
+
+```bash
+# Build and start the container
+docker-compose up --build -d
+
+# Access the application at http://localhost:3000
+```
+
+See [DOCKER_README.md](./DOCKER_README.md) for detailed Docker setup instructions.
+
+### Environment Variables
+
+Create a `.env` file in the `frontend` directory to configure your HelixDB connection:
+
+```bash
+# Local instance
+HELIX_HOST=localhost
+HELIX_PORT=6969
+HELIX_CLOUD_URL=
+HELIX_API_KEY=
+
+# Cloud instance  
+HELIX_HOST=
+HELIX_PORT=
+HELIX_CLOUD_URL=https://xxxxxxxxxx.execute-api.us-west-1.amazonaws.com/v1
+HELIX_API_KEY=your-api-key
+```
+
+**Available variables:**
+- `HELIX_HOST` - HelixDB host (default: localhost)
+- `HELIX_PORT` - HelixDB port (default: 6969)
+- `HELIX_CLOUD_URL` - HelixDB cloud URL (for cloud deployments)
+- `HELIX_API_KEY` - HelixDB API key (for cloud deployments)
 
 ## Visualizer Setup
 
 **NOTE**: 
-- You may need to stop your current helixdb instance running on port 6969
-- In some browsers like **Brave**, you aren't able to click on all the nodes, brave only allows you to click on 2-3 nodes at most. So I'd recommend using anything but brave.
-- I would also not recommend visualizing more than **3000 nodes** it may cause browser to crash
+- You may need to stop your current HelixDB instance and deploy again using `helix deploy -c <cluster_id> --dev` to use the visualizer.
+- In some browsers like **Brave**, you may not be able to click on all nodes properly. We recommend using Chrome, Firefox, or Safari for the best experience.
+- For performance reasons, we recommend not visualizing more than **3000 nodes** as it may cause browser performance issues.
 
-1. You must deploy your existing instance using `helix deploy -c <cluster_id> --dev` to use the visualizer
-2. Then run the frontend and backend
+1. Ensure your HelixDB instance is deployed using `helix deploy -c <cluster_id> --dev` to use the visualizer
+2. Start the dashboard application (locally or via Docker)
