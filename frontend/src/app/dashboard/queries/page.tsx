@@ -1423,7 +1423,7 @@ export default function QueriesPage() {
                                         <SelectItem value="DELETE">DELETE</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Input value={buildUrl()} readOnly className="flex-1 pointer-events-none" />
+                                <Input value={buildUrl()} readOnly className="flex-1" />
                                 <Button onClick={sendRequest} disabled={activeTab?.loading || loading}>
                                     {(activeTab?.loading || loading) ? "Sending..." : <Send className="h-4 w-4" />}
                                 </Button>
