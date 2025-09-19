@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use crate::{
     AppState, DataSource, QUERIES_FILE_PATH, SCHEMA_FILE_PATH,
     core::{query_parser::ApiEndpointInfo, schema_parser::SchemaInfo},
-    web::{params::*, errors::ErrorData, utils::{sort_json_object, map_query_to_endpoint}, types::CloudIntrospectData},
+    web::{params::*, errors::ApiError, utils::{sort_json_object, map_query_to_endpoint}, types::CloudIntrospectData},
 };
 
 
@@ -115,17 +115,14 @@ pub async fn get_endpoints_handler(
 pub async fn get_nodes_edges_handler(
     State(app_state): State<AppState>,
     Query(params): Query<QueryParams>,
-) -> Json<Value> {
+) -> Result<Json<Value>, ApiError> {
     let endpoint = params.to_url("nodes-edges");
 
     match app_state.helix_client.get::<Value>(&endpoint).await {
-        Ok(data) => Json(data),
+        Ok(data) => Ok(Json(data)),
         Err(e) => {
             eprintln!("Error with nodes-edges request: {e}");
-            Json(json!({
-                "error": format!("Request failed: {e}"),
-                "data": ErrorData::empty()
-            }))
+            Err(ApiError::DatabaseError(e.to_string()))
         }
     }
 }
@@ -134,16 +131,13 @@ pub async fn get_nodes_edges_handler(
 pub async fn get_node_details_handler(
     State(app_state): State<AppState>,
     Query(params): Query<QueryParams>,
-) -> Json<Value> {
+) -> Result<Json<Value>, ApiError> {
     let endpoint = params.to_url("node-details");
     match app_state.helix_client.get::<Value>(&endpoint).await {
-        Ok(data) => Json(data),
+        Ok(data) => Ok(Json(data)),
         Err(e) => {
             eprintln!("Error with node-details request: {e}");
-            Json(json!({
-                "error": format!("Request failed: {e}"),
-                "data": json!({})
-            }))
+            Err(ApiError::DatabaseError(e.to_string()))
         }
     }
 }
@@ -152,17 +146,14 @@ pub async fn get_node_details_handler(
 pub async fn get_nodes_by_label_handler(
     State(app_state): State<AppState>,
     Query(params): Query<QueryParams>,
-) -> Json<Value> {
+) -> Result<Json<Value>, ApiError> {
     let endpoint = params.to_url("nodes-by-label");
 
     match app_state.helix_client.get::<Value>(&endpoint).await {
-        Ok(data) => Json(data),
+        Ok(data) => Ok(Json(data)),
         Err(e) => {
             eprintln!("Error with nodes-by-label request: {e}");
-            Json(json!({
-                "error": format!("Request failed: {e}"),
-                "data": ErrorData::empty()
-            }))
+            Err(ApiError::DatabaseError(e.to_string()))
         }
     }
 }
@@ -171,27 +162,14 @@ pub async fn get_nodes_by_label_handler(
 pub async fn get_node_connections_handler(
     State(app_state): State<AppState>,
     Query(params): Query<QueryParams>,
-) -> Json<Value> {
+) -> Result<Json<Value>, ApiError> {
     let endpoint = params.to_url("node-connections");
 
     match app_state.helix_client.get::<Value>(&endpoint).await {
-        Ok(data) => Json(data),
+        Ok(data) => Ok(Json(data)),
         Err(e) => {
             eprintln!("Error with node-connections request: {e}");
-            let mut error_response = json!({
-                "error": format!("Request failed: {e}")
-            });
-
-            if let Value::Object(ref mut map) = error_response {
-                if let Value::Object(error_data) = ErrorData::empty_connections()
-                {
-                    for (key, value) in error_data {
-                        map.insert(key, value);
-                    }
-                }
-            }
-
-            Json(error_response)
+            Err(ApiError::DatabaseError(e.to_string()))
         }
     }
 }
