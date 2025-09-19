@@ -13,6 +13,9 @@ pub enum ApiError {
     #[error("Invalid query parameters: {0}")]
     InvalidQuery(String),
     
+    #[error("Validation failed: {0}")]
+    ValidationError(String),
+    
     #[error("Resource not found: {0}")]
     NotFound(String),
     
@@ -28,6 +31,7 @@ impl ApiError {
         match self {
             ApiError::DatabaseError(_) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::InvalidQuery(_) => StatusCode::BAD_REQUEST,
+            ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -74,6 +78,12 @@ mod tests {
     fn test_unauthorized_status_code() {
         let error = ApiError::Unauthorized;
         assert_eq!(error.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_validation_error_status_code() {
+        let error = ApiError::ValidationError("Invalid input".to_string());
+        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
     }
 
     #[test]

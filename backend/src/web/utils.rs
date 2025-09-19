@@ -85,6 +85,7 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> ApiEndpointInfo {
 mod tests {
     use super::*;
     use serde_json::json;
+    use crate::core::helix_types::{HelixType, ToJson};
 
     #[test]
     fn test_determine_http_method() {

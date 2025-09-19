@@ -16,6 +16,8 @@ pub mod web;
 pub const DEFAULT_BACKEND_PORT: u16 = 8080;
 pub const DEFAULT_HOST: &str = "localhost";
 pub const MAX_LIMIT: u32 = 300;
+pub const MAX_SEARCH_LIMIT_CHARS: usize = 500;
+pub const VALID_SEARCH_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-";
 pub const SCHEMA_FILE_PATH: &str = "helixdb-cfg/schema.hx";
 pub const QUERIES_FILE_PATH: &str = "helixdb-cfg/queries.hx";
 

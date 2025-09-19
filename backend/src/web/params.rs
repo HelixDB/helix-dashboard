@@ -1,9 +1,11 @@
 //! Request and response types for web handlers
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
-use serde_json::Value;
+
 use crate::core::helix_types::{HelixType, ToJson};
+use crate::{MAX_LIMIT, MAX_SEARCH_LIMIT_CHARS, VALID_SEARCH_CHARS};
 
 
 /// # Example
@@ -19,18 +21,70 @@ use crate::core::helix_types::{HelixType, ToJson};
 /// ```
 #[derive(Deserialize, Clone, Default)]
 pub struct QueryParams {
-    /// Pagination limit
+    /// Pagination limit - automatically validated against MAX_LIMIT
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "validate_limit")]
     pub limit: Option<u32>,
     
-    /// Search query - will probs need soon
+    /// Search query - automatically validated for length and content
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "validate_query")]
     pub q: Option<String>,
     
     /// Catch-all for any other parameters
     #[serde(flatten)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub params: HashMap<String, String>,
+}
+
+/// Validate limit parameter during deserialization
+fn validate_limit<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let limit: Option<u32> = Option::deserialize(deserializer)?;
+    
+    if let Some(limit_value) = limit {
+        match limit_value {
+            0 => return Err(Error::custom("Limit must be greater than 0")),
+            l if l > MAX_LIMIT => return Err(Error::custom(format!(
+                "Limit {} exceeds maximum allowed value of {}", l, MAX_LIMIT
+            ))),
+            _ => {}
+        }
+    }
+    
+    Ok(limit)
+}
+
+/// Validate query parameter during deserialization
+fn validate_query<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let query: Option<String> = Option::deserialize(deserializer)?;
+    
+    if let Some(ref q) = query {
+        let validation_result = Some(q)
+            .filter(|q| q.len() <= MAX_SEARCH_LIMIT_CHARS)
+            .ok_or_else(|| Error::custom(format!(
+                "Query length {} exceeds maximum allowed length of {}", 
+                q.len(), 
+                MAX_SEARCH_LIMIT_CHARS
+            )))
+            .and_then(|q| {
+                q.chars()
+                    .all(|c| VALID_SEARCH_CHARS.contains(c))
+                    .then_some(q)
+                    .ok_or_else(|| Error::custom(
+                        "Query contains invalid characters. Only letters, numbers, spaces, dots, underscores, and hyphens are allowed"
+                    ))
+            });
+            
+        validation_result?;
+    }
+    
+    Ok(query)
 }
 
 impl QueryParams {
@@ -72,7 +126,6 @@ impl QueryParams {
         body: Option<&Value>,
         param_types: &HashMap<String, String>,
     ) -> Value {
-        use serde_json::{Map, Value};
         
         // Start with body parameters
         let mut params = match body {
@@ -225,6 +278,48 @@ mod tests {
         } else {
             panic!("Expected object");
         }
+    }
+
+    #[test]
+    fn test_limit_validation() {
+        // Valid limit
+        let valid_json = json!({"limit": 100});
+        let result: Result<QueryParams, _> = serde_json::from_value(valid_json);
+        if let Err(e) = &result {
+            println!("Validation error: {}", e);
+        }
+        assert!(result.is_ok());
+
+        // Limit too high
+        let invalid_json = json!({"limit": 500});
+        let result: Result<QueryParams, _> = serde_json::from_value(invalid_json);
+        assert!(result.is_err());
+
+        // Zero limit
+        let zero_json = json!({"limit": 0});
+        let result: Result<QueryParams, _> = serde_json::from_value(zero_json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_failures_correctly_reject() {
+        // Test that validation actually works - should fail
+        let invalid_cases = vec![
+            json!({"limit": 500}),                           // Exceeds MAX_LIMIT
+            json!({"limit": 0}),                             // Zero not allowed
+            json!({"q": "search'; DROP TABLE users--"}),     // SQL injection
+            json!({"q": "a".repeat(600)}),                   // Too long
+        ];
+
+        for (i, case) in invalid_cases.iter().enumerate() {
+            let result: Result<QueryParams, _> = serde_json::from_value(case.clone());
+            assert!(result.is_err(), "Case {} should have failed but didn't: {:?}", i, case);
+        }
+
+        // Ensure valid case still works
+        let valid = json!({"limit": 100, "q": "normal search"});
+        let result: Result<QueryParams, _> = serde_json::from_value(valid);
+        assert!(result.is_ok(), "Valid case should succeed");
     }
 
 }
