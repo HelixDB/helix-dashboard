@@ -5,20 +5,22 @@ use axum::{
     response::Json,
 };
 use helix_rs::HelixDBClient;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use crate::{
     AppState, DataSource, QUERIES_FILE_PATH, SCHEMA_FILE_PATH,
     core::{query_parser::ApiEndpointInfo, schema_parser::SchemaInfo},
-    web::{params::*, errors::ApiError, utils::{sort_json_object, map_query_to_endpoint}, types::CloudIntrospectData},
+    web::{
+        errors::ApiError,
+        params::*,
+        types::CloudIntrospectData,
+        utils::{map_query_to_endpoint, sort_json_object},
+    },
 };
 
-
 #[axum_macros::debug_handler]
-pub async fn get_schema_handler(
-    State(app_state): State<AppState>,
-) -> Json<SchemaInfo> {
+pub async fn get_schema_handler(State(app_state): State<AppState>) -> Json<SchemaInfo> {
     match app_state.data_source {
         DataSource::LocalFile => match SchemaInfo::from_file(SCHEMA_FILE_PATH) {
             Ok(schema_info) => Json(schema_info),
@@ -28,19 +30,35 @@ pub async fn get_schema_handler(
             }
         },
         DataSource::LocalIntrospect => {
-            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
+            match app_state
+                .helix_client
+                .get::<CloudIntrospectData>("introspect")
+                .await
+            {
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
-                    eprintln!("Error fetching schema from {}: {}", app_state.helix_client.base_url(), e);
+                    eprintln!(
+                        "Error fetching schema from {}: {}",
+                        app_state.helix_client.base_url(),
+                        e
+                    );
                     Json(SchemaInfo::new())
                 }
             }
         }
         DataSource::Cloud => {
-            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
+            match app_state
+                .helix_client
+                .get::<CloudIntrospectData>("introspect")
+                .await
+            {
                 Ok(introspect_data) => Json(introspect_data.schema),
                 Err(e) => {
-                    eprintln!("Error fetching schema from {}: {}", app_state.helix_client.base_url(), e);
+                    eprintln!(
+                        "Error fetching schema from {}: {}",
+                        app_state.helix_client.base_url(),
+                        e
+                    );
                     Json(SchemaInfo::new())
                 }
             }
@@ -56,14 +74,18 @@ pub async fn execute_query_handler(
     body: Option<Json<Value>>,
 ) -> Json<Value> {
     let param_types = get_query_param_types(&app_state, &query_name).await;
-    
+
     let params_value = QueryParams::merge_parameters(
         &query_params,
         body.as_ref().map(|json| &json.0),
         &param_types,
     );
 
-    match app_state.helix_client.query(&query_name, &params_value).await {
+    match app_state
+        .helix_client
+        .query(&query_name, &params_value)
+        .await
+    {
         Ok(result) => Json(sort_json_object(result)),
         Err(e) => {
             eprintln!("Error executing query '{query_name}': {e}");
@@ -80,17 +102,19 @@ pub async fn get_endpoints_handler(
     State(app_state): State<AppState>,
 ) -> Json<Vec<ApiEndpointInfo>> {
     match app_state.data_source {
-        DataSource::LocalFile => {
-            match ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
-                Ok(endpoints) => Json(endpoints),
-                Err(e) => {
-                    eprintln!("Error getting endpoints: {e}");
-                    Json(vec![])
-                }
+        DataSource::LocalFile => match ApiEndpointInfo::from_queries_file(QUERIES_FILE_PATH) {
+            Ok(endpoints) => Json(endpoints),
+            Err(e) => {
+                eprintln!("Error getting endpoints: {e}");
+                Json(vec![])
             }
-        }
+        },
         DataSource::LocalIntrospect | DataSource::Cloud => {
-            match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
+            match app_state
+                .helix_client
+                .get::<CloudIntrospectData>("introspect")
+                .await
+            {
                 Ok(introspect_data) => {
                     let endpoints = introspect_data
                         .queries
@@ -102,7 +126,8 @@ pub async fn get_endpoints_handler(
                 Err(e) => {
                     eprintln!(
                         "Error fetching endpoints from {}: {}",
-                        app_state.helix_client.base_url(), e
+                        app_state.helix_client.base_url(),
+                        e
                     );
                     Json(vec![])
                 }
@@ -174,13 +199,14 @@ pub async fn get_node_connections_handler(
     }
 }
 
-async fn get_query_param_types(
-    app_state: &AppState,
-    query_name: &str,
-) -> HashMap<String, String> {
+async fn get_query_param_types(app_state: &AppState, query_name: &str) -> HashMap<String, String> {
     let mut param_types = HashMap::new();
 
-    match app_state.helix_client.get::<CloudIntrospectData>("introspect").await {
+    match app_state
+        .helix_client
+        .get::<CloudIntrospectData>("introspect")
+        .await
+    {
         Ok(introspect_data) => {
             for query in introspect_data.queries {
                 if query.name == query_name {

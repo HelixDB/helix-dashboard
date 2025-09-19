@@ -1,15 +1,12 @@
+use anyhow::Result;
 use axum::{
     Router,
     routing::{any, get},
 };
-use tower_http::cors::{Any, CorsLayer};
-use anyhow::Result;
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 
-use backend::{
-    AppState,
-    web::*  
-};
+use backend::{AppState, web::*};
 
 #[tokio::main]
 async fn main() -> Result<()> {

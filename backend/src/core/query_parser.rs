@@ -1,6 +1,6 @@
+use super::helix_types::HelixType;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use super::helix_types::HelixType;
 
 /// Represents a parameter in a HelixDB query with its name and Rust type.
 /// The `rust_type` field contains the converted Rust type (e.g., "i32", "String", "Vec<f64>")
@@ -16,14 +16,12 @@ pub struct QueryParameter {
 impl QueryParameter {
     /// Create a new query parameter
     pub fn new(name: String, rust_type: String) -> Self {
-        let rust_type = rust_type.parse::<HelixType>()
+        let rust_type = rust_type
+            .parse::<HelixType>()
             .map(|t| t.to_rust_type())
             .unwrap_or_else(|_| rust_type);
-            
-        Self {
-            name,
-            rust_type,
-        }
+
+        Self { name, rust_type }
     }
 
     /// Parse multiple parameters from a string
@@ -208,22 +206,22 @@ mod tests {
     fn test_query_parameter_type_conversion() {
         let param = QueryParameter::new("test".to_string(), "String".to_string());
         assert_eq!(param.rust_type, "String");
-        
+
         let param = QueryParameter::new("test".to_string(), "I32".to_string());
         assert_eq!(param.rust_type, "i32");
-        
+
         let param = QueryParameter::new("test".to_string(), "I64".to_string());
         assert_eq!(param.rust_type, "i64");
-        
+
         let param = QueryParameter::new("test".to_string(), "F64".to_string());
         assert_eq!(param.rust_type, "f64");
-        
+
         let param = QueryParameter::new("test".to_string(), "ID".to_string());
         assert_eq!(param.rust_type, "String");
-        
+
         let param = QueryParameter::new("test".to_string(), "[F64]".to_string());
         assert_eq!(param.rust_type, "Vec<f64>");
-        
+
         let param = QueryParameter::new("test".to_string(), "CustomType".to_string());
         assert_eq!(param.rust_type, "CustomType");
     }

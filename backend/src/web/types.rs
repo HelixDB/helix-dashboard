@@ -1,8 +1,8 @@
 //! Shared type definitions for the web module
 
+use crate::core::schema_parser::SchemaInfo;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::core::schema_parser::SchemaInfo;
 
 /// Query information from HelixDB introspection
 #[derive(Deserialize)]

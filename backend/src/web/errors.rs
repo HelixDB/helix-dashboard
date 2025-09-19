@@ -1,6 +1,6 @@
 //! Error types and handling for web handlers
 
-use axum::{http::StatusCode, response::IntoResponse, Json as AxumJson};
+use axum::{Json as AxumJson, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -9,19 +9,19 @@ use thiserror::Error;
 pub enum ApiError {
     #[error("Database connection failed: {0}")]
     DatabaseError(String),
-    
+
     #[error("Invalid query parameters: {0}")]
     InvalidQuery(String),
-    
+
     #[error("Validation failed: {0}")]
     ValidationError(String),
-    
+
     #[error("Resource not found: {0}")]
     NotFound(String),
-    
+
     #[error("Authentication required")]
     Unauthorized,
-    
+
     #[error("Internal server error: {0}")]
     Internal(String),
 }
@@ -46,7 +46,7 @@ impl IntoResponse for ApiError {
             "status": status.as_u16(),
             "message": self.to_string()
         }));
-        
+
         (status, body).into_response()
     }
 }

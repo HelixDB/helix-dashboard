@@ -1,8 +1,8 @@
 //! Web utility functions for response formatting
 
-use serde_json::Value;
 use crate::core::query_parser::{ApiEndpointInfo, QueryParameter};
 use crate::web::types::IntrospectQuery;
+use serde_json::Value;
 
 /// Determine HTTP method based on query name patterns
 pub fn determine_http_method(query_name: &str) -> &'static str {
@@ -20,7 +20,7 @@ pub fn determine_http_method(query_name: &str) -> &'static str {
 }
 
 /// Sort JSON object keys for consistent API response formatting
-/// 
+///
 /// Orders keys as: numeric keys (sorted numerically), "id" key, then other keys.
 /// Recursively processes nested objects and arrays.
 pub fn sort_json_object(value: Value) -> Value {
@@ -47,9 +47,7 @@ pub fn sort_json_object(value: Value) -> Value {
                 .collect::<serde_json::Map<_, _>>()
                 .into()
         }
-        Value::Array(arr) => {
-            Value::Array(arr.into_iter().map(sort_json_object).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_json_object).collect()),
         other => other,
     }
 }
@@ -60,10 +58,7 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> ApiEndpointInfo {
         params
             .into_iter()
             .map(|(name, type_val)| {
-                QueryParameter::new(
-                    name,
-                    type_val.as_str().unwrap_or("String").to_string(),
-                )
+                QueryParameter::new(name, type_val.as_str().unwrap_or("String").to_string())
             })
             .collect()
     } else {
@@ -80,12 +75,11 @@ pub fn map_query_to_endpoint(query: IntrospectQuery) -> ApiEndpointInfo {
     )
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::core::helix_types::{HelixType, ToJson};
+    use serde_json::json;
 
     #[test]
     fn test_determine_http_method() {
@@ -116,7 +110,7 @@ mod tests {
         let Value::Object(map) = result else {
             panic!("Expected object");
         };
-        
+
         let keys: Vec<_> = map.keys().collect();
         assert_eq!(keys, vec!["1", "2", "id", "name"]);
     }
@@ -136,11 +130,11 @@ mod tests {
         let Value::Object(map) = result else {
             panic!("Expected object");
         };
-        
+
         let Some(Value::Object(nested)) = map.get("data") else {
             panic!("Expected nested object");
         };
-        
+
         let keys: Vec<_> = nested.keys().collect();
         assert_eq!(keys, vec!["1", "3", "name"]);
     }
@@ -156,10 +150,12 @@ mod tests {
         let Value::Array(arr) = result else {
             panic!("Expected array");
         };
-        
+
         assert_eq!(arr.len(), 2);
         for item in arr {
-            let Value::Object(obj) = item else { continue; };
+            let Value::Object(obj) = item else {
+                continue;
+            };
             let keys: Vec<_> = obj.keys().collect();
             if keys.iter().any(|k| *k == "1") {
                 assert_eq!(keys, vec!["1", "name"]);
@@ -245,5 +241,4 @@ mod tests {
         let result = "UnknownType".parse::<HelixType>();
         assert!(result.is_err()); // Unknown types fail to parse
     }
-
 }

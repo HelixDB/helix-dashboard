@@ -1,6 +1,6 @@
 //! Helix type system with generic conversion traits
 
-use serde_json::{from_str, Value, Number};
+use serde_json::{Number, Value, from_str};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 use thiserror::Error;
@@ -29,7 +29,7 @@ impl Display for HelixType {
             HelixType::U128 => write!(f, "U128"),
             HelixType::F64 => write!(f, "F64"),
             HelixType::ID => write!(f, "ID"),
-            HelixType::Array(inner) => write!(f, "[{}]", inner),
+            HelixType::Array(inner) => write!(f, "[{inner}]"),
         }
     }
 }
@@ -48,17 +48,17 @@ impl FromStr for HelixType {
             "F64" => Ok(HelixType::F64),
             "ID" => Ok(HelixType::ID),
             s if s.starts_with('[') && s.ends_with(']') => {
-                let inner = &s[1..s.len()-1];
+                let inner = &s[1..s.len() - 1];
                 let inner_type = HelixType::from_str(inner)?;
                 Ok(HelixType::Array(Box::new(inner_type)))
             }
             // Support legacy Array(T) syntax
             s if s.starts_with("Array(") && s.ends_with(')') => {
-                let inner = &s[6..s.len()-1];
+                let inner = &s[6..s.len() - 1];
                 let inner_type = HelixType::from_str(inner)?;
                 Ok(HelixType::Array(Box::new(inner_type)))
             }
-            _ => Err(HelixTypeError::ParseType(format!("Unknown type: {}", s))),
+            _ => Err(HelixTypeError::ParseType(format!("Unknown type: {s}"))),
         }
     }
 }
@@ -83,7 +83,7 @@ impl HelixType {
 pub enum HelixTypeError {
     #[error("Parse error: {0}")]
     ParseType(String),
-    
+
     #[error("Failed to convert '{value}' to {expected_type}: {error}")]
     Conversion {
         value: String,
@@ -104,35 +104,40 @@ impl ToJson for str {
     fn to_json(&self, helix_type: &HelixType) -> Result<Value, HelixTypeError> {
         match helix_type {
             HelixType::String | HelixType::ID => Ok(Value::String(self.to_string())),
-            HelixType::I32 => self.parse::<i32>()
+            HelixType::I32 => self
+                .parse::<i32>()
                 .map(|n| Value::Number(Number::from(n)))
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
                     error: e.to_string(),
                 }),
-            HelixType::I64 => self.parse::<i64>()
+            HelixType::I64 => self
+                .parse::<i64>()
                 .map(|n| Value::Number(Number::from(n)))
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
                     error: e.to_string(),
                 }),
-            HelixType::U32 => self.parse::<u32>()
+            HelixType::U32 => self
+                .parse::<u32>()
                 .map(|n| Value::Number(Number::from(n)))
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
                     error: e.to_string(),
                 }),
-            HelixType::U64 => self.parse::<u64>()
+            HelixType::U64 => self
+                .parse::<u64>()
                 .map(|n| Value::Number(Number::from(n)))
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
                     error: e.to_string(),
                 }),
-            HelixType::U128 => self.parse::<u128>()
+            HelixType::U128 => self
+                .parse::<u128>()
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
@@ -147,28 +152,28 @@ impl ToJson for str {
                             error: "Number too large for JSON representation".to_string(),
                         })
                 }),
-            HelixType::F64 => self.parse::<f64>()
+            HelixType::F64 => self
+                .parse::<f64>()
                 .map_err(|e| HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
                     error: e.to_string(),
                 })
                 .and_then(|n| {
-                    Number::from_f64(n)
-                        .map(Value::Number)
-                        .ok_or_else(|| HelixTypeError::Conversion {
+                    Number::from_f64(n).map(Value::Number).ok_or_else(|| {
+                        HelixTypeError::Conversion {
                             value: self.to_string(),
                             expected_type: helix_type.clone(),
                             error: "Invalid float value for JSON".to_string(),
-                        })
+                        }
+                    })
                 }),
             HelixType::Array(inner_type) => match inner_type.as_ref() {
-                HelixType::F64 => parse_f64_array(self)
-                    .map_err(|e| HelixTypeError::Conversion {
-                        value: self.to_string(),
-                        expected_type: helix_type.clone(),
-                        error: e,
-                    }),
+                HelixType::F64 => parse_f64_array(self).map_err(|e| HelixTypeError::Conversion {
+                    value: self.to_string(),
+                    expected_type: helix_type.clone(),
+                    error: e,
+                }),
                 _ => Err(HelixTypeError::Conversion {
                     value: self.to_string(),
                     expected_type: helix_type.clone(),
@@ -196,7 +201,7 @@ fn parse_f64_array(value: &str) -> Result<Value, String> {
                     .collect(),
             )
         })
-        .map_err(|e| format!("Failed to parse array: {}", e))
+        .map_err(|e| format!("Failed to parse array: {e}"))
 }
 
 #[cfg(test)]
@@ -208,22 +213,34 @@ mod tests {
     fn test_helix_type_display() {
         assert_eq!(HelixType::String.to_string(), "String");
         assert_eq!(HelixType::I32.to_string(), "I32");
-        assert_eq!(HelixType::Array(Box::new(HelixType::F64)).to_string(), "[F64]");
+        assert_eq!(
+            HelixType::Array(Box::new(HelixType::F64)).to_string(),
+            "[F64]"
+        );
     }
 
     #[test]
     fn test_helix_type_from_str() {
         assert_eq!("String".parse::<HelixType>().unwrap(), HelixType::String);
         assert_eq!("I32".parse::<HelixType>().unwrap(), HelixType::I32);
-        assert_eq!("[F64]".parse::<HelixType>().unwrap(), HelixType::Array(Box::new(HelixType::F64)));
-        assert_eq!("Array(F64)".parse::<HelixType>().unwrap(), HelixType::Array(Box::new(HelixType::F64)));
+        assert_eq!(
+            "[F64]".parse::<HelixType>().unwrap(),
+            HelixType::Array(Box::new(HelixType::F64))
+        );
+        assert_eq!(
+            "Array(F64)".parse::<HelixType>().unwrap(),
+            HelixType::Array(Box::new(HelixType::F64))
+        );
     }
 
     #[test]
     fn test_to_rust_type() {
         assert_eq!(HelixType::String.to_rust_type(), "String");
         assert_eq!(HelixType::I32.to_rust_type(), "i32");
-        assert_eq!(HelixType::Array(Box::new(HelixType::F64)).to_rust_type(), "Vec<f64>");
+        assert_eq!(
+            HelixType::Array(Box::new(HelixType::F64)).to_rust_type(),
+            "Vec<f64>"
+        );
     }
 
     #[test]
@@ -252,7 +269,7 @@ mod tests {
     fn test_to_json_array() {
         let array_type = HelixType::Array(Box::new(HelixType::F64));
         let result = "[1.0, 2.0, 3.0]".to_json(&array_type).unwrap();
-        
+
         if let Value::Array(arr) = result {
             assert_eq!(arr.len(), 3);
             assert_eq!(arr[0].as_f64(), Some(1.0));
@@ -267,10 +284,14 @@ mod tests {
     fn test_conversion_errors() {
         let result = "invalid".to_json(&HelixType::I32);
         assert!(result.is_err());
-        
+
         let err = result.unwrap_err();
         match err {
-            HelixTypeError::Conversion { value, expected_type, .. } => {
+            HelixTypeError::Conversion {
+                value,
+                expected_type,
+                ..
+            } => {
                 assert_eq!(value, "invalid");
                 assert_eq!(expected_type, HelixType::I32);
             }

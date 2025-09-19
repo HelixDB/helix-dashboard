@@ -4,10 +4,10 @@
 //! including schema parsing, query handling, and web API endpoints.
 
 use clap::{Parser, ValueEnum};
+use core::helix_client::BackendHelixClient;
 use dotenv::dotenv;
 use helix_rs::HelixDBClient;
 use std::env;
-use core::helix_client::BackendHelixClient;
 
 pub mod core;
 pub mod web;
@@ -17,7 +17,8 @@ pub const DEFAULT_BACKEND_PORT: u16 = 8080;
 pub const DEFAULT_HOST: &str = "localhost";
 pub const MAX_LIMIT: u32 = 300;
 pub const MAX_SEARCH_LIMIT_CHARS: usize = 500;
-pub const VALID_SEARCH_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-";
+pub const VALID_SEARCH_CHARS: &str =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-";
 pub const SCHEMA_FILE_PATH: &str = "helixdb-cfg/schema.hx";
 pub const QUERIES_FILE_PATH: &str = "helixdb-cfg/queries.hx";
 
@@ -35,12 +36,12 @@ pub enum DataSource {
     )]
     LocalIntrospect,
     #[value(
-        name = "local-file", 
+        name = "local-file",
         help = "Load configuration directly from helixdb-cfg directory (no HelixDB service required)"
     )]
     LocalFile,
     #[value(
-        name = "cloud", 
+        name = "cloud",
         help = "Connect to remote HelixDB instance (requires URL and optional API key via HELIX_API_KEY)"
     )]
     Cloud,
@@ -66,19 +67,19 @@ pub enum DataSource {
 )]
 pub struct Args {
     #[arg(
-        value_enum, 
+        value_enum,
         default_value = "local-introspect",
         help = "Data source configuration mode"
     )]
     pub source: DataSource,
-    
+
     #[arg(
-        value_name = "URL", 
+        value_name = "URL",
         required_if_eq("source", "cloud"),
         help = "HelixDB cloud endpoint URL (required for cloud mode)"
     )]
     pub cloud_url: Option<String>,
-    
+
     #[arg(
         short = 'p',
         long = "port",
@@ -94,7 +95,13 @@ pub struct AppState {
     pub helix_client: BackendHelixClient,
     pub data_source: DataSource,
     pub api_key: Option<String>,
-    pub backend_port: u16,  // Backend web server port  
+    pub backend_port: u16, // Backend web server port
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AppState {
@@ -102,13 +109,17 @@ impl AppState {
     pub fn new() -> Self {
         dotenv().ok();
         let args = Args::parse();
-        let Args { source: data_source, cloud_url, helix_port } = args;
-        
+        let Args {
+            source: data_source,
+            cloud_url,
+            helix_port,
+        } = args;
+
         let api_key = env::var(ENV_API_KEY).ok();
         let host = env::var(ENV_DOCKER_HOST).unwrap_or_else(|_| DEFAULT_HOST.to_string());
         let helix_url = match data_source {
             DataSource::LocalIntrospect => {
-                let url = format!("http://{}:{}", host, helix_port);
+                let url = format!("http://{host}:{helix_port}");
                 println!("Starting server in local-introspect mode");
                 println!("Using local HelixDB introspect endpoint: {url}/introspect");
                 url
@@ -116,7 +127,7 @@ impl AppState {
             DataSource::LocalFile => {
                 println!("Starting server in local-file mode");
                 println!("Reading from local helixdb-cfg files");
-                format!("http://{}:{}", host, helix_port)
+                format!("http://{host}:{helix_port}")
             }
             DataSource::Cloud => {
                 let url = cloud_url
@@ -128,17 +139,15 @@ impl AppState {
                     Some(_) => println!(
                         "Authentication: Using API key from HELIX_API_KEY environment variable"
                     ),
-                    None => println!("Authentication: No API key found, connecting without authentication"),
+                    None => println!(
+                        "Authentication: No API key found, connecting without authentication"
+                    ),
                 }
                 url
             }
         };
 
-        let helix_client = BackendHelixClient::new(
-            Some(&helix_url),
-            None,
-            api_key.as_deref(),
-        );
+        let helix_client = BackendHelixClient::new(Some(&helix_url), None, api_key.as_deref());
 
         let backend_port = env::var(ENV_BACKEND_PORT)
             .ok()
@@ -152,7 +161,4 @@ impl AppState {
             backend_port,
         }
     }
-
 }
-
-

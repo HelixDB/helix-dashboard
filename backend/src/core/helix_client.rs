@@ -48,10 +48,13 @@ impl BackendHelixClient {
         }
 
         let response = request.send().await?;
-        
+
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(BackendHelixError::ServerError { status, message });
         }
 
@@ -66,7 +69,7 @@ impl BackendHelixClient {
         } else {
             let base = self.base_url.trim_end_matches('/');
             let endpoint = url_or_endpoint.trim_start_matches('/');
-            format!("{}/{}", base, endpoint)
+            format!("{base}/{endpoint}")
         }
     }
 
@@ -103,7 +106,6 @@ impl BackendHelixClient {
         let url = self.resolve_url(url_or_endpoint);
         self.request::<(), R>(Method::DELETE, &url, None).await
     }
-
 }
 
 /// Implement the HelixDBClient trait for compatibility
@@ -114,7 +116,7 @@ impl HelixDBClient for BackendHelixClient {
         let base_url = format!(
             "{}{}",
             endpoint.unwrap_or("http://localhost"),
-            port.map(|p| format!(":{}", p)).unwrap_or_default()
+            port.map(|p| format!(":{p}")).unwrap_or_default()
         );
 
         Self {
@@ -140,13 +142,13 @@ mod tests {
     #[test]
     fn test_resolve_url_relative_endpoint() {
         let client = BackendHelixClient::new(Some("http://localhost:6969"), None, None);
-        
+
         let result = client.resolve_url("introspect");
         assert_eq!(result, "http://localhost:6969/introspect");
-        
+
         let result = client.resolve_url("nodes-edges");
         assert_eq!(result, "http://localhost:6969/nodes-edges");
-        
+
         let result = client.resolve_url("node-details?id=123");
         assert_eq!(result, "http://localhost:6969/node-details?id=123");
     }
@@ -154,10 +156,10 @@ mod tests {
     #[test]
     fn test_resolve_url_relative_endpoint_with_leading_slash() {
         let client = BackendHelixClient::new(Some("http://localhost:6969"), None, None);
-        
+
         let result = client.resolve_url("/introspect");
         assert_eq!(result, "http://localhost:6969/introspect");
-        
+
         let result = client.resolve_url("/nodes-edges");
         assert_eq!(result, "http://localhost:6969/nodes-edges");
     }
@@ -165,7 +167,7 @@ mod tests {
     #[test]
     fn test_resolve_url_full_http_url() {
         let client = BackendHelixClient::new(Some("http://localhost:6969"), None, None);
-        
+
         let result = client.resolve_url("http://example.com/api/data");
         assert_eq!(result, "http://example.com/api/data");
     }
@@ -173,7 +175,7 @@ mod tests {
     #[test]
     fn test_resolve_url_full_https_url() {
         let client = BackendHelixClient::new(Some("http://localhost:6969"), None, None);
-        
+
         let result = client.resolve_url("https://api.helixdb.com/introspect");
         assert_eq!(result, "https://api.helixdb.com/introspect");
     }
@@ -185,21 +187,22 @@ mod tests {
             base_url: "http://localhost:6969/".to_string(),
             api_key: None,
         };
-        
+
         let result = client.resolve_url("introspect");
         assert_eq!(result, "http://localhost:6969/introspect");
-        
+
         let result = client.resolve_url("/introspect");
         assert_eq!(result, "http://localhost:6969/introspect");
     }
 
     #[test]
     fn test_resolve_url_cloud_endpoint() {
-        let client = BackendHelixClient::new(Some("https://api.helixdb.com"), None, Some("test-key"));
-        
+        let client =
+            BackendHelixClient::new(Some("https://api.helixdb.com"), None, Some("test-key"));
+
         let result = client.resolve_url("introspect");
         assert_eq!(result, "https://api.helixdb.com/introspect");
-        
+
         let result = client.resolve_url("query/get-users");
         assert_eq!(result, "https://api.helixdb.com/query/get-users");
     }
