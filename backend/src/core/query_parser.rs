@@ -1,31 +1,28 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use super::helix_types::HelixType;
 
+/// Represents a parameter in a HelixDB query with its name and Rust type.
+/// The `rust_type` field contains the converted Rust type (e.g., "i32", "String", "Vec<f64>")
+/// derived from the original Helix type (e.g., "I32", "String", "[F64]").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryParameter {
     pub name: String,
-    pub param_type: String,
+    // rename to param_type to be backward compatible with FE
+    #[serde(rename = "param_type")]
+    pub rust_type: String,
 }
 
 impl QueryParameter {
     /// Create a new query parameter
-    pub fn new(name: String, param_type: String) -> Self {
+    pub fn new(name: String, rust_type: String) -> Self {
+        let rust_type = rust_type.parse::<HelixType>()
+            .map(|t| t.to_rust_type())
+            .unwrap_or_else(|_| rust_type);
+            
         Self {
             name,
-            param_type: Self::map_helix_type_to_rust(&param_type),
-        }
-    }
-
-    /// Map HelixDB types to Rust types
-    pub fn map_helix_type_to_rust(helix_type: &str) -> String {
-        match helix_type {
-            "String" => "String".to_string(),
-            "I32" => "i32".to_string(),
-            "I64" => "i64".to_string(),
-            "F64" => "f64".to_string(),
-            "ID" => "String".to_string(),
-            "[F64]" => "Vec<f64>".to_string(),
-            _ => helix_type.to_string(),
+            rust_type,
         }
     }
 
@@ -39,10 +36,10 @@ impl QueryParameter {
 
         for param in params_str.split(", ") {
             let param = param.trim();
-            if let Some((name, param_type)) = param.split_once(": ") {
+            if let Some((name, rust_type)) = param.split_once(": ") {
                 parameters.push(Self::new(
                     name.trim().to_string(),
-                    param_type.trim().to_string(),
+                    rust_type.trim().to_string(),
                 ));
             }
         }
@@ -84,7 +81,7 @@ impl QueryDefinition {
             return None;
         }
 
-        let name = parts[0].replace("QUERY ", "").trim().to_string();
+        let name = parts[0].strip_prefix("QUERY ")?.trim().to_string();
 
         let params_section = parts[1].split(") =>").next()?;
         let parameters = QueryParameter::parse_multiple(params_section);
@@ -208,17 +205,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_map_helix_type_to_rust() {
-        assert_eq!(QueryParameter::map_helix_type_to_rust("String"), "String");
-        assert_eq!(QueryParameter::map_helix_type_to_rust("I32"), "i32");
-        assert_eq!(QueryParameter::map_helix_type_to_rust("I64"), "i64");
-        assert_eq!(QueryParameter::map_helix_type_to_rust("F64"), "f64");
-        assert_eq!(QueryParameter::map_helix_type_to_rust("ID"), "String");
-        assert_eq!(QueryParameter::map_helix_type_to_rust("[F64]"), "Vec<f64>");
-        assert_eq!(
-            QueryParameter::map_helix_type_to_rust("CustomType"),
-            "CustomType"
-        );
+    fn test_query_parameter_type_conversion() {
+        let param = QueryParameter::new("test".to_string(), "String".to_string());
+        assert_eq!(param.rust_type, "String");
+        
+        let param = QueryParameter::new("test".to_string(), "I32".to_string());
+        assert_eq!(param.rust_type, "i32");
+        
+        let param = QueryParameter::new("test".to_string(), "I64".to_string());
+        assert_eq!(param.rust_type, "i64");
+        
+        let param = QueryParameter::new("test".to_string(), "F64".to_string());
+        assert_eq!(param.rust_type, "f64");
+        
+        let param = QueryParameter::new("test".to_string(), "ID".to_string());
+        assert_eq!(param.rust_type, "String");
+        
+        let param = QueryParameter::new("test".to_string(), "[F64]".to_string());
+        assert_eq!(param.rust_type, "Vec<f64>");
+        
+        let param = QueryParameter::new("test".to_string(), "CustomType".to_string());
+        assert_eq!(param.rust_type, "CustomType");
     }
 
     #[test]
@@ -304,7 +311,7 @@ mod tests {
         let result = QueryParameter::parse_multiple("name: String");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "name");
-        assert_eq!(result[0].param_type, "String");
+        assert_eq!(result[0].rust_type, "String");
     }
 
     #[test]
@@ -313,13 +320,13 @@ mod tests {
         assert_eq!(result.len(), 3);
 
         assert_eq!(result[0].name, "user_id");
-        assert_eq!(result[0].param_type, "String");
+        assert_eq!(result[0].rust_type, "String");
 
         assert_eq!(result[1].name, "name");
-        assert_eq!(result[1].param_type, "String");
+        assert_eq!(result[1].rust_type, "String");
 
         assert_eq!(result[2].name, "age");
-        assert_eq!(result[2].param_type, "i32");
+        assert_eq!(result[2].rust_type, "i32");
     }
 
     #[test]
@@ -332,7 +339,7 @@ mod tests {
         assert_eq!(query.name, "getUserById");
         assert_eq!(query.parameters.len(), 1);
         assert_eq!(query.parameters[0].name, "user_id");
-        assert_eq!(query.parameters[0].param_type, "String");
+        assert_eq!(query.parameters[0].rust_type, "String");
         assert_eq!(query.http_method, "GET");
         assert_eq!(query.endpoint_path, "/api/query/get-user-by-id/{user_id}");
     }

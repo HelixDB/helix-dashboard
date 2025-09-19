@@ -21,7 +21,7 @@ impl NodeType {
             .or_else(|| line.strip_prefix("V::"))
             .ok_or_else(|| anyhow::anyhow!("Invalid node definition"))?;
 
-        let name = name_part.trim_end_matches(" {").trim().to_string();
+        let name = name_part.trim_end_matches(" {").trim();
         let mut properties = HashMap::new();
 
         *index += 1;
@@ -47,7 +47,7 @@ impl NodeType {
         }
 
         Ok(Some(Self {
-            name,
+            name: name.to_string(),
             node_type: node_type.to_string(),
             properties,
         }))
@@ -77,8 +77,7 @@ impl EdgeType {
             .strip_prefix("E::")
             .ok_or_else(|| anyhow::anyhow!("Invalid edge definition"))?
             .trim_end_matches(" {")
-            .trim()
-            .to_string();
+            .trim();
 
         let mut from_node = String::new();
         let mut to_node = String::new();
@@ -131,7 +130,7 @@ impl EdgeType {
         }
 
         Ok(Some(Self {
-            name,
+            name: name.to_string(),
             from_node,
             to_node,
             properties,
@@ -158,7 +157,7 @@ impl VectorType {
             .or_else(|| line.strip_prefix("N::"))
             .ok_or_else(|| anyhow::anyhow!("Invalid vector definition"))?;
 
-        let name = name_part.trim_end_matches(" {").trim().to_string();
+        let name = name_part.trim_end_matches(" {").trim();
         let mut properties = HashMap::new();
 
         *index += 1;
@@ -184,7 +183,7 @@ impl VectorType {
         }
 
         Ok(Some(Self {
-            name,
+            name: name.to_string(),
             vector_type: vector_type.to_string(),
             properties,
         }))
@@ -273,7 +272,7 @@ fn parse_property_line(line: &str) -> Option<(String, String)> {
     let clean_line = line.trim().trim_end_matches(",");
 
     clean_line.find(':').map(|colon_pos| {
-        let prop_name = clean_line[..colon_pos].trim().to_string();
+        let prop_name = clean_line[..colon_pos].trim();
         let prop_type = clean_line[colon_pos + 1..].trim();
 
         let normalized_type = match prop_type.starts_with('[') && prop_type.ends_with(']') {
@@ -281,7 +280,7 @@ fn parse_property_line(line: &str) -> Option<(String, String)> {
             false => prop_type.to_string(),
         };
 
-        (prop_name, normalized_type)
+        (prop_name.to_string(), normalized_type)
     })
 }
 
