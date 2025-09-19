@@ -1,4 +1,5 @@
 use super::helix_types::HelixType;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -30,19 +31,19 @@ impl QueryParameter {
             return Vec::new();
         }
 
-        let mut parameters = Vec::new();
-
-        for param in params_str.split(", ") {
-            let param = param.trim();
-            if let Some((name, rust_type)) = param.split_once(": ") {
-                parameters.push(Self::new(
-                    name.trim().to_string(),
-                    rust_type.trim().to_string(),
-                ));
-            }
-        }
-
-        parameters
+        params_str
+            .split(", ")
+            .collect::<Vec<_>>()
+            .par_iter()
+            .filter_map(|param| {
+                param.trim().split_once(": ").map(|(name, rust_type)| {
+                    Self::new(
+                        name.trim().to_string(),
+                        rust_type.trim().to_string(),
+                    )
+                })
+            })
+            .collect()
     }
 }
 
@@ -58,16 +59,16 @@ impl QueryDefinition {
     /// Parse query definitions from file
     pub fn from_file(file_path: &str) -> anyhow::Result<Vec<Self>> {
         let content = fs::read_to_string(file_path)?;
-        let mut queries = Vec::new();
-
-        for line in content.lines() {
-            let line = line.trim();
-            if line.starts_with("QUERY ") {
-                if let Some(query_def) = Self::from_line(line) {
-                    queries.push(query_def);
-                }
-            }
-        }
+        
+        let queries: Vec<Self> = content
+            .lines()
+            .collect::<Vec<_>>()
+            .par_iter()
+            .filter_map(|line| {
+                let trimmed_line = line.trim();
+                trimmed_line.starts_with("QUERY ").then(|| Self::from_line(trimmed_line)).flatten()
+            })
+            .collect();
 
         Ok(queries)
     }
@@ -174,7 +175,7 @@ impl ApiEndpointInfo {
     pub fn from_queries_file(queries_file_path: &str) -> anyhow::Result<Vec<Self>> {
         QueryDefinition::from_file(queries_file_path).map(|query_definitions| {
             query_definitions
-                .into_iter()
+                .into_par_iter()
                 .map(|query| {
                     Self::new(
                         query.endpoint_path,
