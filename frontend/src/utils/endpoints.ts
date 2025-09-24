@@ -110,19 +110,27 @@ function getDefaultValueForType(paramType: string): any {
             return '';
         case 'id':
             return '';
+        case 'date':
+            return '';
         case 'boolean':
         case 'bool':
             return false;
+        case 'i8':
+        case 'i16':
         case 'i32':
         case 'i64':
+        case 'u8':
+        case 'u16':
         case 'u32':
         case 'u64':
         case 'u128':
             return 0;
+        case 'f32':
         case 'f64':
             return 0.0;
         case 'vec<f64>':
         case 'array(f64)':
+        case '[f64]':
             return [];
         default:
             return '';
@@ -142,22 +150,30 @@ export function convertParamValue(value: string, paramType: string): any {
             return value;
         case 'id':
             return value;
+        case 'date':
+            return value;
         case 'boolean':
         case 'bool':
             const lowerValue = value.toLowerCase().trim();
             return lowerValue === 'true' || lowerValue === '1' || lowerValue === 'yes';
+        case 'i8':
+        case 'i16':
         case 'i32':
         case 'i64':
+        case 'u8':
+        case 'u16':
         case 'u32':
         case 'u64':
         case 'u128':
             const intVal = parseInt(value, 10);
             return isNaN(intVal) ? 0 : intVal;
+        case 'f32':
         case 'f64':
             const floatVal = parseFloat(value);
             return isNaN(floatVal) ? 0.0 : floatVal;
         case 'vec<f64>':
         case 'array(f64)':
+        case '[f64]':
             try {
                 const parsed = JSON.parse(value);
                 if (Array.isArray(parsed)) {
