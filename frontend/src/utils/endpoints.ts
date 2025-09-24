@@ -110,6 +110,9 @@ function getDefaultValueForType(paramType: string): any {
             return '';
         case 'id':
             return '';
+        case 'boolean':
+        case 'bool':
+            return false;
         case 'i32':
         case 'i64':
         case 'u32':
@@ -139,6 +142,10 @@ export function convertParamValue(value: string, paramType: string): any {
             return value;
         case 'id':
             return value;
+        case 'boolean':
+        case 'bool':
+            const lowerValue = value.toLowerCase().trim();
+            return lowerValue === 'true' || lowerValue === '1' || lowerValue === 'yes';
         case 'i32':
         case 'i64':
         case 'u32':
