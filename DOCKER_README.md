@@ -13,13 +13,13 @@ This guide explains how to build and run the Helix Dashboard using Docker, which
 
 ```bash
 # Build and start the container
-docker-compose up --build
+docker compose up --build
 
 # Run in detached mode (background)
-docker-compose up --build -d
+docker compose up --build -d
 
 # Stop the container
-docker-compose down
+docker compose down
 ```
 
 ### Option 2: Using Docker directly
@@ -89,7 +89,7 @@ To switch between different HelixDB instances:
 1. **Edit your `frontend/.env` file** with new values
 2. **Restart the container** (no rebuild needed):
    ```bash
-   docker-compose restart
+   docker compose restart
    ```
 
 ### Using Docker run directly
@@ -129,7 +129,7 @@ Note: For active development, it's recommended to run the application locally us
 
 ```bash
 # Using docker-compose
-docker-compose logs
+docker compose logs
 
 # Using docker
 docker logs helix-dashboard
@@ -139,7 +139,7 @@ docker logs helix-dashboard
 
 ```bash
 # Using docker-compose
-docker-compose exec helix-dashboard sh
+docker compose exec helix-dashboard sh
 
 # Using docker
 docker exec -it helix-dashboard sh
