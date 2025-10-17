@@ -65,9 +65,8 @@ HELIX_API_KEY=your-api-key
 ## Visualizer Setup
 
 **NOTE**: 
-- You may need to stop your current HelixDB instance and deploy again using `helix deploy -c <cluster_id> --dev` to use the visualizer.
 - In some browsers like **Brave**, you may not be able to click on all nodes properly. We recommend using Chrome, Firefox, or Safari for the best experience.
 - For performance reasons, we recommend not visualizing more than **3000 nodes** as it may cause browser performance issues.
 
-1. Ensure your HelixDB instance is deployed using `helix deploy -c <cluster_id> --dev` to use the visualizer
+1. Ensure your HelixDB instance is deployed with `build_mode = "dev"` in `helix.toml` to use the visualizer.
 2. Start the dashboard application (locally or via Docker)
